@@ -18,8 +18,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Build
+      - name: Build (GitHub runners have the Android SDK preinstalled)
         run: ./gradlew --no-daemon assembleRelease
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk PrintWatch.apk

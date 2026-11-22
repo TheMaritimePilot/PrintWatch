@@ -5,7 +5,8 @@
 
   var N = window.Native || null;
   var DEMO = !N;
-  var DEFAULTS = { printers: [], dim: true, dimLevel: 8, sound: true, clock24: true, controls: true };
+  var DEFAULTS = { printers: [], dim: true, dimLevel: 8, sound: true, clock24: true, controls: true,
+    autoUpdate: true, updateToken: '' };
 
   var STATUS = {
     IDLE: ['Idle', 'idle'], INIT: ['Starting', 'prep'], SLICING: ['Slicing', 'prep'],
@@ -271,6 +272,10 @@
       c.cam.classList.remove('live');
       c.camEmpty.textContent = camState === 'off' ? 'Camera off' :
         camState === 'offline' ? 'Camera unavailable' : 'Connecting camera…';
+      if (camState !== 'off' && s.cameraError) {
+        c.camEmpty.appendChild(document.createElement('br'));
+        c.camEmpty.appendChild(el('small', 'cam-why', s.cameraError));
+      }
     }
 
     renderAms(c, p, job);
@@ -508,6 +513,9 @@
     $('optSound').checked = !!draft.sound;
     $('opt24h').checked = !!draft.clock24;
     $('optControls').checked = !!draft.controls;
+    $('optAutoUpdate').checked = draft.autoUpdate !== false;
+    $('optToken').value = draft.updateToken || '';
+    onUpdate(N ? JSON.parse(N.updateStatus()) : { state: 'idle', message: '' });
     $('version').textContent = 'PrintWatch ' + (N ? N.appVersion() : 'preview');
     $('settings').classList.remove('hidden');
     $('settings').scrollTop = 0;
@@ -577,6 +585,8 @@
     draft.sound = $('optSound').checked;
     draft.clock24 = $('opt24h').checked;
     draft.controls = $('optControls').checked;
+    draft.autoUpdate = $('optAutoUpdate').checked;
+    draft.updateToken = $('optToken').value.trim();
     cfg = draft;
     saveConfig();
     $('settings').classList.add('hidden');
@@ -589,6 +599,33 @@
   $('welcomeSetup').addEventListener('click', openSettings);
   $('androidSettings').addEventListener('click', function () { if (N) N.openAndroidSettings(); });
   $('homeSettings').addEventListener('click', function () { if (N) N.openHomeSettings(); });
+
+  // ---------------------------------------------------------------- updates
+
+  function onUpdate(u) {
+    if (!u) return;
+    var msg = u.message || '';
+    var line = $('updateMsg');
+    line.textContent = 'Installed version ' + (N ? N.appVersion() : 'preview') + (msg ? ' \u2014 ' + msg : '');
+    var needPerm = u.state === 'permission' || (N && !N.canInstall());
+    $('allowInstalls').classList.toggle('hidden', !needPerm);
+    var note = $('updateNote');
+    var show = { permission: 1, downloading: 1, installing: 1, error: 1, available: 1 }[u.state];
+    note.classList.toggle('hidden', !show);
+    note.classList.toggle('err', u.state === 'error' || u.state === 'permission');
+    note.textContent = u.state === 'permission' ? 'Update ready \u2014 tap to allow installing' :
+      u.state === 'error' ? 'Update problem \u2014 tap for details' : msg;
+  }
+
+  $('checkUpdate').addEventListener('click', function () {
+    if (!N) return;
+    // save a token typed just now before checking
+    cfg.updateToken = $('optToken').value.trim();
+    saveConfig();
+    N.checkUpdate();
+  });
+  $('allowInstalls').addEventListener('click', function () { if (N) N.allowInstalls(); });
+  $('updateNote').addEventListener('click', openSettings);
 
   // ------------------------------------------------------ clock, dim, summary
 
@@ -641,6 +678,7 @@
   window.PW = {
     onState: onState,
     onFrame: onFrame,
+    onUpdate: onUpdate,
     onBack: function () {
       if (!$('dialog').classList.contains('hidden')) closeDialog();
       else if (viewerIndex >= 0) closeViewer();

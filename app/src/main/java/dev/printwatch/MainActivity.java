@@ -31,6 +31,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -52,12 +53,27 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     private final Map<Integer, Boolean> pendingFrame = new HashMap<>();
     private boolean flushScheduled;
     private SharedPreferences prefs;
+    private Updater updater;
+    private static WeakReference<MainActivity> current = new WeakReference<>(null);
+
+    private static final long UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000L;
+    private final Runnable autoUpdate = new Runnable() {
+        @Override public void run() {
+            JSONObject c = config();
+            if (c.optBoolean("autoUpdate", true)) updater.check(c.optString("updateToken", ""), true);
+            ui.postDelayed(this, UPDATE_INTERVAL_MS);
+        }
+    };
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("printwatch", MODE_PRIVATE);
+        current = new WeakReference<>(this);
+        updater = new Updater(this, json -> ui.post(() ->
+                web.evaluateJavascript("window.PW && PW.onUpdate(" + json + ")", null)));
+        ui.postDelayed(autoUpdate, 60 * 1000L); // first check a minute after start
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                 | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
@@ -107,8 +123,24 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         web.evaluateJavascript("window.PW && PW.onBack()", null);
     }
 
+    /** Called by the install receiver when Android reports a failed update. */
+    static void reportUpdateFailure(final String message) {
+        final MainActivity a = current.get();
+        if (a == null) return;
+        a.ui.post(() -> {
+            JSONObject o = new JSONObject();
+            try { o.put("state", "error"); o.put("message", message); } catch (Exception ignored) { }
+            a.web.evaluateJavascript("window.PW && PW.onUpdate(" + o + ")", null);
+        });
+    }
+
+    private JSONObject config() {
+        try { return new JSONObject(loadConfig()); } catch (Exception e) { return new JSONObject(); }
+    }
+
     @Override
     protected void onDestroy() {
+        ui.removeCallbacks(autoUpdate);
         stopPrinters();
         web.destroy();
         super.onDestroy();
@@ -262,6 +294,32 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         @JavascriptInterface
         public void openHomeSettings() {
             launch(new Intent(Settings.ACTION_HOME_SETTINGS));
+        }
+
+        /** Check GitHub now and install a newer version if there is one. */
+        @JavascriptInterface
+        public void checkUpdate() {
+            JSONObject c = config();
+            updater.check(c.optString("updateToken", ""), true);
+        }
+
+        @JavascriptInterface
+        public String updateStatus() {
+            return updater.lastStatus();
+        }
+
+        /** Opens Android's "Install unknown apps" switch for PrintWatch (needed for updates). */
+        @JavascriptInterface
+        public void allowInstalls() {
+            if (Build.VERSION.SDK_INT >= 26) {
+                launch(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName())));
+            }
+        }
+
+        @JavascriptInterface
+        public boolean canInstall() {
+            return Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
         }
 
         @JavascriptInterface

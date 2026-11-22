@@ -22,6 +22,9 @@ network**. There is no server, no Home Assistant, no kiosk browser and no Bambu 
 - Plays a sound when a print finishes, fails or pauses
 - Dims the screen when nothing is printing; the first tap only wakes it up
 - Starts straight into the dashboard when the tablet boots (it acts as the tablet's home screen)
+- **Updates itself** from this repository's releases (checks every 6 hours, or on demand in
+  settings). On Android 12+ that happens without a tap once *Install unknown apps* is allowed
+  for PrintWatch; older Android versions ask for one tap to confirm.
 
 ## Install on the tablet
 
@@ -82,8 +85,7 @@ The code is small and has no third-party libraries:
 ## Building
 
 GitHub builds the APK on every push to `main` and publishes it as a new release
-(`v1.0.<build number>`). To update the tablet, download the latest APK again and install it
-over the old one; your settings are kept.
+(`v1.0.<build number>`). The app on the tablet picks it up by itself.
 
 To build yourself, install Android Studio (or the Android SDK + JDK 17) and run:
 
@@ -91,8 +93,12 @@ To build yourself, install Android Studio (or the Android SDK + JDK 17) and run:
 ./gradlew assembleRelease
 ```
 
-The APK lands in `app/build/outputs/apk/release/app-release.apk`. The project includes its own
-signing key (`keystore/`), so every build can update the installed app without uninstalling.
+The APK lands in `app/build/outputs/apk/release/app-release.apk`.
+
+Signing: `keystore/printwatch.jks` is protected by a password that is not in the repository.
+GitHub reads it from the `KEYSTORE_PASSWORD` secret (Settings → Secrets and variables → Actions).
+For a local build put `printwatch.keystorePassword=...` in `local.properties`. Without it the
+build still works but is signed with a debug key, so it can't update the installed app.
 
 ## Testing without a printer
 

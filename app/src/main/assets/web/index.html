@@ -10,6 +10,7 @@
   <header class="topbar">
     <div class="clock"><span id="time">--:--</span><span id="date"></span></div>
     <div id="summary" class="summary"></div>
+    <button id="updateNote" class="update-note hidden"></button>
     <button id="openSettings" class="iconbtn" aria-label="Settings">
       <svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
     </button>
@@ -45,6 +46,17 @@
         <button id="saveSettings" class="primary">Save</button>
         <button id="cancelSettings" class="ghost">Cancel</button>
       </div>
+
+      <h3>Updates</h3>
+      <p class="hint" id="updateMsg"></p>
+      <label class="check"><input type="checkbox" id="optAutoUpdate"> Install new versions from GitHub automatically</label>
+      <div class="actions">
+        <button id="checkUpdate" class="ghost">Check for updates now</button>
+        <button id="allowInstalls" class="ghost hidden">Allow PrintWatch to install updates</button>
+      </div>
+      <label class="tokenrow">GitHub token (only needed if the repository is private)
+        <input type="password" id="optToken" autocomplete="off" spellcheck="false" placeholder="leave empty for a public repository">
+      </label>
 
       <h3>Tablet</h3>
       <div class="actions">

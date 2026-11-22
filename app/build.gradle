@@ -16,24 +16,37 @@ android {
         versionName "1.0.${build}"
     }
 
-    // A fixed key so every build you make can update the installed app.
-    // This is only for your own sideloaded app, not for the Play Store.
+    // The signing key file is in the repository, protected by a password that is NOT:
+    // GitHub reads it from the KEYSTORE_PASSWORD secret, a local build from local.properties
+    // (printwatch.keystorePassword=...). Every build signed with it can update the installed app.
+    def localProps = new Properties()
+    def lp = rootProject.file('local.properties')
+    if (lp.exists()) lp.withInputStream { localProps.load(it) }
+    def keystorePassword = System.getenv('PRINTWATCH_KEYSTORE_PASSWORD') ?: localProps.getProperty('printwatch.keystorePassword')
+
     signingConfigs {
-        release {
-            storeFile file('../keystore/printwatch.jks')
-            storePassword 'printwatch'
-            keyAlias 'printwatch'
-            keyPassword 'printwatch'
+        if (keystorePassword) {
+            release {
+                storeFile file('../keystore/printwatch.jks')
+                storeType 'pkcs12'
+                storePassword keystorePassword
+                keyAlias 'printwatch'
+                keyPassword keystorePassword
+            }
         }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
-        }
-        debug {
-            signingConfig signingConfigs.release
+            if (keystorePassword) {
+                signingConfig signingConfigs.release
+            } else {
+                // Without the password the APK is signed with a throw-away debug key. It installs,
+                // but cannot update (or be updated by) the official PrintWatch builds.
+                logger.warn('PrintWatch: no keystore password, signing with the debug key')
+                signingConfig signingConfigs.debug
+            }
         }
     }
 

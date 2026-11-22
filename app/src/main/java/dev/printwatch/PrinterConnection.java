@@ -68,6 +68,7 @@ public final class PrinterConnection {
     private String status = "connecting";
     private String error = "";
     private String camStatus = "off";
+    private String camError = "";
 
     private volatile byte[] latestFrame;
 
@@ -348,9 +349,12 @@ public final class PrinterConnection {
         long backoff = 2000;
         while (running) {
             SSLSocket s = null;
+            String step = "connect";
+            boolean gotFrame = false;
             try {
                 setCamStatus("connecting");
-                s = MiniMqtt.openTls(cfg.host, 6000, 8000, 20000);
+                s = MiniMqtt.openTls(cfg.host, 6000, 8000, 30000);
+                step = "auth";
                 camSocket = s;
                 OutputStream out = s.getOutputStream();
                 out.write(cameraAuthPacket(cfg.accessCode));
@@ -366,6 +370,7 @@ public final class PrinterConnection {
                     in.readFully(jpeg);
                     if ((jpeg[0] & 0xFF) == 0xFF && (jpeg[1] & 0xFF) == 0xD8) {
                         latestFrame = jpeg;
+                        gotFrame = true;
                         if (!"online".equals(camStatus)) setCamStatus("online");
                         backoff = 2000;
                         callback.onFrame(index);
@@ -373,7 +378,7 @@ public final class PrinterConnection {
                 }
             } catch (Exception e) {
                 if (!running) break;
-                setCamStatus("offline");
+                setCamStatus("offline", describeCamera(e, step, gotFrame));
             } finally {
                 camSocket = null;
                 if (s != null) try { s.close(); } catch (IOException ignored) { }
@@ -412,8 +417,34 @@ public final class PrinterConnection {
     }
 
     private void setCamStatus(String s) {
-        synchronized (stateLock) { camStatus = s; }
+        setCamStatus(s, "");
+    }
+
+    private void setCamStatus(String s, String error) {
+        synchronized (stateLock) {
+            camStatus = s;
+            if (!"connecting".equals(s)) camError = error; // keep the last reason while retrying
+        }
         emit();
+    }
+
+    /** A human readable reason, so camera problems can be diagnosed from the screen. */
+    static String describeCamera(Exception e, String step, boolean gotFrame) {
+        String m = String.valueOf(e.getMessage());
+        if ("connect".equals(step)) {
+            if (e instanceof SocketTimeoutException) return "Camera port 6000 not responding";
+            if (m.contains("ECONNREFUSED") || m.contains("refused")) return "Camera port 6000 refused the connection";
+            if (e instanceof javax.net.ssl.SSLException) return "Camera TLS handshake failed: " + m;
+            return "Camera connection failed: " + m;
+        }
+        if (gotFrame) {
+            if (e instanceof SocketTimeoutException) return "Camera stopped sending pictures";
+            return "Camera stream interrupted: " + m;
+        }
+        if (e instanceof SocketTimeoutException) return "Camera connected but sends no picture";
+        if (e instanceof java.io.EOFException || m.contains("reset") || m.contains("closed"))
+            return "Printer closed the camera connection (camera in use elsewhere, or wrong access code)";
+        return "Camera error: " + m;
     }
 
     private void emit() {
@@ -424,6 +455,7 @@ public final class PrinterConnection {
                 o.put("status", status);
                 o.put("error", error);
                 o.put("camera", cfg.camera ? camStatus : "off");
+                o.put("cameraError", cfg.camera ? camError : "");
                 o.put("print", print);
                 JSONObject model = new JSONObject();
                 model.put("key", modelKey);

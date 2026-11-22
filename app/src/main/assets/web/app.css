@@ -90,6 +90,9 @@ button { font: inherit; color: inherit; }
   color: var(--muted); font-size: 15px;
 }
 .cam.live .cam-empty { display: none; }
+.cam:not(.live) img.live { display: none; }
+.cam-empty { text-align: center; padding: 0 16px; }
+.cam-why { display: inline-block; margin-top: 6px; font-size: 13px; opacity: .8; max-width: 420px; }
 .cam img.model {
   left: 8px; top: 8px; right: auto; bottom: auto; width: 28%; height: auto; max-height: 45%;
   object-fit: contain; background: rgba(20,25,34,.85); border-radius: 8px; padding: 4px;
@@ -254,3 +257,15 @@ label.range input { flex: 1; }
 .viewer { position: fixed; inset: 0; background: #000; z-index: 15; }
 .viewer img { width: 100%; height: 100%; object-fit: contain; }
 .viewer-name { position: absolute; left: 16px; top: 12px; font-size: 20px; background: rgba(0,0,0,.55); padding: 4px 12px; border-radius: 8px; }
+
+/* updates */
+.update-note {
+  background: rgba(76,154,255,.15); color: #a8cbff; border: 1px solid rgba(76,154,255,.4);
+  border-radius: 99px; padding: 5px 12px; font-size: 13px; white-space: nowrap;
+}
+.update-note.err { background: rgba(248,81,73,.14); color: #ffb1ab; border-color: rgba(248,81,73,.4); }
+.tokenrow { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); margin-top: 16px; }
+.tokenrow input {
+  background: var(--card2); border: 1px solid var(--line); border-radius: 8px; color: var(--text);
+  padding: 10px; font-size: 16px;
+}

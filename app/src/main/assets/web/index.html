@@ -11,6 +11,10 @@
     <div class="clock"><span id="time">--:--</span><span id="date"></span></div>
     <div id="summary" class="summary"></div>
     <button id="updateNote" class="update-note hidden"></button>
+    <button id="openLibrary" class="libbtn" aria-label="Filament">
+      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 3.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/></svg>
+      <span>Filament</span>
+    </button>
     <button id="openSettings" class="iconbtn" aria-label="Settings">
       <svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
     </button>
@@ -40,6 +44,13 @@
       <label class="range">Dimmed brightness <input type="range" id="optDimLevel" min="1" max="60" step="1"> <span id="optDimLevelVal"></span></label>
       <label class="check"><input type="checkbox" id="optSound"> Play a sound when a print finishes, fails or pauses</label>
       <label class="check"><input type="checkbox" id="opt24h"> 24-hour clock</label>
+      <label class="range">Screen orientation
+        <select id="optOrientation">
+          <option value="auto">Follow the tablet (auto-rotate)</option>
+          <option value="landscape">Always landscape</option>
+          <option value="portrait">Always portrait</option>
+        </select>
+      </label>
       <label class="check"><input type="checkbox" id="optControls"> Show printer controls (pause, stop, light, speed, temperatures, fans)</label>
 
       <div class="actions">
@@ -47,12 +58,17 @@
         <button id="cancelSettings" class="ghost">Cancel</button>
       </div>
 
+      <h3>Filament library on your computer</h3>
+      <label class="check"><input type="checkbox" id="optWebLibrary"> Let computers on my home network view and edit the filament library</label>
+      <p class="hint" id="webAddress"></p>
+
       <h3>Updates</h3>
       <p class="hint" id="updateMsg"></p>
       <label class="check"><input type="checkbox" id="optAutoUpdate"> Install new versions from GitHub automatically</label>
       <div class="actions">
         <button id="checkUpdate" class="ghost">Check for updates now</button>
         <button id="allowInstalls" class="ghost hidden">Allow PrintWatch to install updates</button>
+        <button id="allowReopen" class="ghost hidden">Let PrintWatch reopen itself after an update</button>
       </div>
       <label class="tokenrow">GitHub token (only needed if the repository is private)
         <input type="password" id="optToken" autocomplete="off" spellcheck="false" placeholder="leave empty for a public repository">
@@ -66,6 +82,38 @@
       <p class="hint small" id="version"></p>
     </div>
   </div>
+
+  <div id="library" class="settings library hidden">
+    <div class="settings-inner wide">
+      <div class="libhead">
+        <h2>Filament</h2>
+        <span id="remoteStatus" class="remote-status"></span>
+        <div class="tabs"><button data-tab="spools" class="sel">Spools</button><button data-tab="history">Print history</button></div>
+        <div class="spacer"></div>
+        <button id="libClose" class="ghost">Close</button>
+      </div>
+      <div id="libSpools">
+        <div class="libbar">
+          <button id="addSpool" class="primary">+ Add spool</button>
+          <span id="libTotals" class="hint"></span>
+          <div class="spacer"></div>
+          <label class="check small"><input type="checkbox" id="showArchived"> Show used up</label>
+        </div>
+        <div id="spoolList" class="spoollist"></div>
+      </div>
+      <div id="libHistory" class="hidden">
+        <p id="histSummary" class="hint"></p>
+        <div id="histList"></div>
+      </div>
+      <div class="actions">
+        <button id="libSettings" class="ghost">Filament settings</button>
+        <button id="libBackup" class="ghost">Backup / restore</button>
+      </div>
+      <p class="hint small">After every print PrintWatch subtracts the filament it used (read from the print file) from the spool
+        in that slot. Bambu spools with an RFID chip are recognised automatically; tap any other slot on the dashboard to pick its spool.</p>
+    </div>
+  </div>
+  <datalist id="materialList"></datalist>
 
   <div id="dialog" class="dialog hidden">
     <div class="dlg">
@@ -135,6 +183,7 @@
     </section>
   </template>
 
+  <script src="filament.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

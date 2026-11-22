@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
@@ -19,6 +20,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -27,8 +29,14 @@ import android.webkit.WebViewClient;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
@@ -36,6 +44,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Full-screen dashboard. Registered as a home screen (launcher), so once you pick it as the
@@ -54,6 +65,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     private boolean flushScheduled;
     private SharedPreferences prefs;
     private Updater updater;
+    private LibraryServer libraryServer;
     private static WeakReference<MainActivity> current = new WeakReference<>(null);
 
     private static final long UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000L;
@@ -74,6 +86,16 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         updater = new Updater(this, json -> ui.post(() ->
                 web.evaluateJavascript("window.PW && PW.onUpdate(" + json + ")", null)));
         ui.postDelayed(autoUpdate, 60 * 1000L); // first check a minute after start
+        applyOrientation(config().optString("orientation", "auto"));
+        libraryServer = new LibraryServer(new LibraryServer.Handler() {
+            @Override public byte[] asset(String path) throws IOException { return readAsset(path); }
+            @Override public String getLibrary() throws Exception { return callJs("PWFil.remoteGet()"); }
+            @Override public String applyOp(String json) throws Exception {
+                String op = new JSONObject(json).toString(); // validated and re-encoded: safe to pass to the page
+                return callJs("PWFil.remoteOp(" + op + ")");
+            }
+        });
+        updateLibraryServer();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                 | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
@@ -134,6 +156,75 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         });
     }
 
+    private void updateLibraryServer() {
+        if (config().optBoolean("webLibrary", false)) libraryServer.start(); else libraryServer.stop();
+    }
+
+    private byte[] readAsset(String path) throws IOException {
+        try (InputStream in = getAssets().open("web/" + path)) {
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            return bo.toByteArray();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** Runs JavaScript in the dashboard and waits for its (string) result. */
+    private String callJs(final String script) throws Exception {
+        final CountDownLatch done = new CountDownLatch(1);
+        final AtomicReference<String> result = new AtomicReference<>();
+        ui.post(() -> web.evaluateJavascript("(function(){try{return " + script + ";}catch(e){return null;}})()",
+                (ValueCallback<String>) value -> { result.set(value); done.countDown(); }));
+        if (!done.await(10, TimeUnit.SECONDS)) throw new Exception("timeout");
+        String raw = result.get();
+        if (raw == null || raw.equals("null")) throw new Exception("dashboard not ready");
+        Object v = new JSONTokener(raw).nextValue(); // the JS string comes back JSON-encoded
+        return String.valueOf(v);
+    }
+
+    private void applyOrientation(String o) {
+        setRequestedOrientation("landscape".equals(o) ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                : "portrait".equals(o) ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                : ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+    }
+
+    // Small JSON documents (the filament library) stored in the app's private storage.
+    private File dataFile(String name) {
+        if (name == null || !name.matches("[a-z]{1,20}")) return null;
+        return new File(getFilesDir(), "data-" + name + ".json");
+    }
+
+    private synchronized String readData(String name) {
+        File f = dataFile(name);
+        if (f == null || !f.exists()) return null;
+        try (FileInputStream in = new FileInputStream(f)) {
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            return new String(bo.toByteArray(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private synchronized void writeData(String name, String json) {
+        File f = dataFile(name);
+        if (f == null) return;
+        File tmp = new File(f.getPath() + ".tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            out.write(json.getBytes(StandardCharsets.UTF_8));
+            out.getFD().sync();
+        } catch (IOException e) {
+            return;
+        }
+        //noinspection ResultOfMethodCallIgnored
+        tmp.renameTo(f); // atomic: a crash never leaves a half-written library
+    }
+
     private JSONObject config() {
         try { return new JSONObject(loadConfig()); } catch (Exception e) { return new JSONObject(); }
     }
@@ -141,6 +232,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     @Override
     protected void onDestroy() {
         ui.removeCallbacks(autoUpdate);
+        if (libraryServer != null) libraryServer.stop();
         stopPrinters();
         web.destroy();
         super.onDestroy();
@@ -248,6 +340,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
                 new JSONObject(json); // validate
                 prefs.edit().putString("config", json).apply();
                 ui.post(MainActivity.this::startPrinters);
+                ui.post(MainActivity.this::updateLibraryServer);
             } catch (Exception ignored) { }
         }
 
@@ -320,6 +413,44 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         @JavascriptInterface
         public boolean canInstall() {
             return Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
+        }
+
+        @JavascriptInterface
+        public String loadData(String name) {
+            return readData(name);
+        }
+
+        @JavascriptInterface
+        public void saveData(String name, String json) {
+            try {
+                new JSONObject(json); // validate
+                writeData(name, json);
+            } catch (Exception ignored) { }
+        }
+
+        /** The address computers use for the filament library, or "" when it is off. */
+        @JavascriptInterface
+        public String webAddress() {
+            return libraryServer != null && libraryServer.running() ? LibraryServer.address() : "";
+        }
+
+        @JavascriptInterface
+        public void setOrientation(final String o) {
+            ui.post(() -> applyOrientation(o));
+        }
+
+        /**
+         * Android only lets an app open itself from the background (after an update or a reboot)
+         * with the "Display over other apps" permission.
+         */
+        @JavascriptInterface
+        public boolean canReopen() {
+            return Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void allowReopen() {
+            launch(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
         }
 
         @JavascriptInterface

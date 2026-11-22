@@ -17,6 +17,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Refresh the filament catalogue from SpoolmanDB
+        continue-on-error: true   # keep the committed catalogue if this fails
+        run: |
+          git clone --depth 1 https://github.com/Donkie/SpoolmanDB /tmp/SpoolmanDB
+          python3 tools/build_catalog.py /tmp/SpoolmanDB
+          cp /tmp/SpoolmanDB/LICENSE app/src/main/assets/web/catalog-LICENSE.txt
       - name: Check signing secret
         env:
           PRINTWATCH_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

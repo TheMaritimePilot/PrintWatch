@@ -8,6 +8,8 @@ network**. There is no server, no Home Assistant, no kiosk browser and no Bambu 
 
 ![Dashboard](docs/dashboard.png)
 
+![Filament library](docs/filament.png)
+
 ## What it shows and does
 
 - **Live camera** of each printer (tap it for full screen)
@@ -19,6 +21,16 @@ network**. There is no server, no Home Assistant, no kiosk browser and no Bambu 
 - Errors and HMS warnings, and the reason for a pause (e.g. filament runout)
 - **Controls**: chamber light, pause / resume, stop (with confirmation), speed mode
   (Silent / Standard / Sport / Ludicrous), set nozzle and bed temperature, set fan speeds
+- **Filament library** (like Spoolman, built in):
+  - add spools from a catalogue of 85+ brands and thousands of colours, or enter your own
+  - every spool has a location: a printer's AMS slot, its external spool holder, the shelf, or your own places
+  - after each print the grams used (read from the print file) are subtracted from the right spool;
+    a stopped print only counts the part that was printed
+  - Bambu spools with an RFID chip are recognised and added automatically
+  - weigh a spool on a kitchen scale to correct the amount; low spools are shown in orange
+  - print history with grams and cost per print
+  - **edit the library from your computer**: switch it on in settings and open the address it shows
+    (`http://<tablet address>:8080`) in a browser on the same network
 - Plays a sound when a print finishes, fails or pauses
 - Dims the screen when nothing is printing; the first tap only wakes it up
 - Starts straight into the dashboard when the tablet boots (it acts as the tablet's home screen)
@@ -63,6 +75,20 @@ PrintWatch uses the printer's local network connection (the same one Bambu Studi
   from third-party apps when **LAN Only Mode** *and* **Developer Mode** are switched on in the
   printer's settings. Developer Mode disconnects the printer from the Bambu cloud and the
   Bambu Handy app; Bambu Studio / OrcaSlicer in LAN mode keep working.
+
+## Filament catalogue
+
+The spool catalogue comes from [SpoolmanDB](https://github.com/Donkie/SpoolmanDB) by Donkie
+(MIT license, see `app/src/main/assets/web/catalog-LICENSE.txt`). Every GitHub build refreshes it;
+to refresh it by hand:
+
+```bash
+git clone --depth 1 https://github.com/Donkie/SpoolmanDB /tmp/SpoolmanDB
+```
+
+```bash
+python3 tools/build_catalog.py /tmp/SpoolmanDB
+```
 
 ## Troubleshooting
 

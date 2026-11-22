@@ -4,9 +4,10 @@
   'use strict';
 
   var N = window.Native || null;
-  var DEMO = !N;
+  var REMOTE = !!window.PW_REMOTE; // the filament library opened from a computer's browser
+  var DEMO = !N && !REMOTE;
   var DEFAULTS = { printers: [], dim: true, dimLevel: 8, sound: true, clock24: true, controls: true,
-    autoUpdate: true, updateToken: '' };
+    autoUpdate: true, updateToken: '', orientation: 'auto', webLibrary: false };
 
   var STATUS = {
     IDLE: ['Idle', 'idle'], INIT: ['Starting', 'prep'], SLICING: ['Slicing', 'prep'],
@@ -53,7 +54,7 @@
   function loadConfig() {
     var c = null;
     try {
-      c = JSON.parse(DEMO ? (localStorage.getItem('pw-config') || 'null') : N.getConfig());
+      c = REMOTE ? {} : JSON.parse(DEMO ? (localStorage.getItem('pw-config') || 'null') : N.getConfig());
     } catch (e) { c = null; }
     if (!c && DEMO) c = demoConfig();
     c = c || {};
@@ -285,46 +286,57 @@
     var ams = p.ams || {};
     var units = ams.ams || [];
     var now = String(ams.tray_now == null ? '255' : ams.tray_now);
+    var F = window.PWFil;
     var items = [];
+    var all = F.trays(p);
     units.forEach(function (u, ui) {
-      var unitId = num(u.id, ui);
-      var info = { info: true, temp: u.temp, hum: u.humidity_raw ? u.humidity_raw + '%' : (u.humidity ? 'Level ' + u.humidity : '') };
-      items.push(info);
-      (u.tray || []).forEach(function (t) {
-        var slot = num(t.id);
-        items.push({
-          name: String.fromCharCode(65 + unitId) + (slot + 1),
-          type: t.tray_type || '', color: colorOf(t.tray_color),
-          remain: num(t.remain, -1), active: job && now === String(unitId * 4 + slot)
-        });
+      items.push({ info: true, temp: u.temp, hum: u.humidity_raw ? u.humidity_raw + '%' : (u.humidity ? 'Level ' + u.humidity : '') });
+      all.forEach(function (t) {
+        if (t.unit === u) items.push(trayItem(c, t, job && now === String(t.slot)));
       });
     });
-    var vt = p.vt_tray;
-    if (vt && (vt.tray_type || !units.length)) {
-      items.push({ name: 'Ext', type: vt.tray_type || '', color: colorOf(vt.tray_color), remain: -1, active: job && now === '254' });
-    }
-    var key = JSON.stringify(items);
+    all.forEach(function (t) {
+      // the external spool holder: shown when it holds something or when there is no AMS
+      if (t.slot === 254 && (t.type || !units.length || F.trayLabel(c, 254))) {
+        items.push(trayItem(c, t, job && (now === '254' || (!units.length && now === '255'))));
+      }
+    });
+    var key = JSON.stringify(items) + F.version();
     if (key === c.amsKey) return;
     c.amsKey = key;
     c.ams.textContent = '';
     items.forEach(function (it) {
       if (it.info) {
         var inf = el('div', 'amsinfo');
-        if (it.temp != null && it.temp !== '') inf.appendChild(el('div', null, '🌡 ' + Math.round(num(it.temp)) + '°C'));
-        if (it.hum) inf.appendChild(el('div', null, '💧 ' + it.hum));
+        if (it.temp != null && it.temp !== '') inf.appendChild(el('div', null, '\ud83c\udf21 ' + Math.round(num(it.temp)) + '\u00b0C'));
+        if (it.hum) inf.appendChild(el('div', null, '\ud83d\udca7 ' + it.hum));
         if (inf.childNodes.length) c.ams.appendChild(inf);
         return;
       }
-      var tray = el('div', 'tray' + (it.active ? ' active' : ''));
+      var tray = el('button', 'tray' + (it.active ? ' active' : ''));
+      tray.setAttribute('data-tray', it.slot);
       var sw = el('div', 'swatch' + (it.type ? '' : ' empty'));
       if (it.type && it.color) sw.style.background = it.color;
       tray.appendChild(sw);
       var txt = el('div');
       txt.appendChild(el('div', 't', it.type || 'Empty'));
-      txt.appendChild(el('div', 's', it.name + (it.type && it.remain >= 0 ? ' · ' + it.remain + '%' : '')));
+      var sub = el('div', 's', it.name + (it.amount ? ' \u00b7 ' : ''));
+      if (it.amount) sub.appendChild(el('b', it.low ? 'low' : '', it.amount));
+      txt.appendChild(sub);
       tray.appendChild(txt);
       c.ams.appendChild(tray);
     });
+  }
+
+  /** One AMS / external slot for the dashboard; a linked spool's grams replace the AMS estimate. */
+  function trayItem(c, t, active) {
+    var lab = window.PWFil.trayLabel(c, t.slot);
+    var type = t.type || (lab ? lab.material : '');
+    var color = t.type ? t.color : (lab ? lab.color : null);
+    return {
+      slot: t.slot, name: t.slot === 254 ? 'Ext' : t.name, type: type, color: color, active: active,
+      amount: lab ? lab.text : (t.type && t.remain >= 0 ? t.remain + '%' : ''), low: lab ? lab.low : false
+    };
   }
 
   // ------------------------------------------------------- native callbacks
@@ -344,6 +356,7 @@
     }
     if (g) c.lastGcode = g;
     c.state = s;
+    window.PWFil.track(c, s);
     render(c);
     updateSummary();
   }
@@ -386,6 +399,8 @@
   }
 
   function onCardClick(c, e) {
+    var tr = e.target.closest('[data-tray]');
+    if (tr) { window.PWFil.pickSpool(c, tr.getAttribute('data-tray')); return; }
     var t = e.target.closest('[data-act],[data-set],.cam');
     if (!t || !c.state || c.state.status !== 'online') {
       if (t && t.classList.contains('cam') && c.cam.classList.contains('live')) openViewer(c);
@@ -421,8 +436,9 @@
     }
   }
 
-  function dialog(title, body, buttons) {
+  function dialog(title, body, buttons, wide) {
     var d = $('dialog');
+    d.querySelector('.dlg').classList.toggle('wide', !!wide);
     d.querySelector('.dlg-title').textContent = title;
     var b = d.querySelector('.dlg-body');
     b.textContent = '';
@@ -514,6 +530,9 @@
     $('opt24h').checked = !!draft.clock24;
     $('optControls').checked = !!draft.controls;
     $('optAutoUpdate').checked = draft.autoUpdate !== false;
+    $('optOrientation').value = draft.orientation || 'auto';
+    $('optWebLibrary').checked = !!draft.webLibrary;
+    showWebAddress();
     $('optToken').value = draft.updateToken || '';
     onUpdate(N ? JSON.parse(N.updateStatus()) : { state: 'idle', message: '' });
     $('version').textContent = 'PrintWatch ' + (N ? N.appVersion() : 'preview');
@@ -586,9 +605,13 @@
     draft.clock24 = $('opt24h').checked;
     draft.controls = $('optControls').checked;
     draft.autoUpdate = $('optAutoUpdate').checked;
+    draft.orientation = $('optOrientation').value;
+    draft.webLibrary = $('optWebLibrary').checked;
     draft.updateToken = $('optToken').value.trim();
     cfg = draft;
     saveConfig();
+    if (N) N.setOrientation(cfg.orientation || 'auto');
+    setTimeout(showWebAddress, 500);
     $('settings').classList.add('hidden');
     buildGrid();
     if (DEMO) demoStart();
@@ -600,6 +623,12 @@
   $('androidSettings').addEventListener('click', function () { if (N) N.openAndroidSettings(); });
   $('homeSettings').addEventListener('click', function () { if (N) N.openHomeSettings(); });
 
+  function showWebAddress() {
+    var addr = N ? N.webAddress() : '';
+    $('webAddress').textContent = addr ? 'On your computer, open: ' + addr :
+      ($('optWebLibrary').checked ? 'Starts when you tap Save.' : '');
+  }
+
   // ---------------------------------------------------------------- updates
 
   function onUpdate(u) {
@@ -609,6 +638,7 @@
     line.textContent = 'Installed version ' + (N ? N.appVersion() : 'preview') + (msg ? ' \u2014 ' + msg : '');
     var needPerm = u.state === 'permission' || (N && !N.canInstall());
     $('allowInstalls').classList.toggle('hidden', !needPerm);
+    $('allowReopen').classList.toggle('hidden', !N || N.canReopen());
     var note = $('updateNote');
     var show = { permission: 1, downloading: 1, installing: 1, error: 1, available: 1 }[u.state];
     note.classList.toggle('hidden', !show);
@@ -625,6 +655,7 @@
     N.checkUpdate();
   });
   $('allowInstalls').addEventListener('click', function () { if (N) N.allowInstalls(); });
+  $('allowReopen').addEventListener('click', function () { if (N) N.allowReopen(); });
   $('updateNote').addEventListener('click', openSettings);
 
   // ------------------------------------------------------ clock, dim, summary
@@ -682,6 +713,7 @@
     onBack: function () {
       if (!$('dialog').classList.contains('hidden')) closeDialog();
       else if (viewerIndex >= 0) closeViewer();
+      else if (window.PWFil.isOpen()) window.PWFil.close();
       else if (!$('settings').classList.contains('hidden')) $('settings').classList.add('hidden');
     }
   };
@@ -803,12 +835,19 @@
   // ------------------------------------------------------------------ start
 
   cfg = loadConfig();
+  if (REMOTE) document.body.classList.add('remote');
+  window.PWFil.init({
+    N: N, DEMO: DEMO, REMOTE: REMOTE, el: el, num: num, colorOf: colorOf, fmtClock: fmtClock,
+    dialog: dialog, closeDialog: closeDialog, confirmDialog: confirmDialog,
+    cards: function () { return cards; },
+    rerender: function () { cards.forEach(function (c) { c.amsKey = ''; render(c); }); }
+  });
   buildGrid();
   updateClock();
   setInterval(updateClock, 1000);
   setInterval(function () { cards.forEach(render); updateDim(); }, 30000);
   setInterval(updateDim, 5000);
   if (DEMO) demoStart();
-  else N.ready();
-  if (!cfg.printers.length && !DEMO) openSettings();
+  else if (N) N.ready();
+  if (!cfg.printers.length && N) openSettings();
 })();

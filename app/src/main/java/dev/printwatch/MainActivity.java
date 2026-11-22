@@ -81,6 +81,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        installCrashLog(this);
         prefs = getSharedPreferences("printwatch", MODE_PRIVATE);
         current = new WeakReference<>(this);
         updater = new Updater(this, json -> ui.post(() ->
@@ -96,6 +97,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
             }
         });
         updateLibraryServer();
+        Updater.handleInstallStatus(this, getIntent());
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                 | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
@@ -117,6 +119,23 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         web.setWebViewClient(new LocalClient());
         setContentView(web);
         web.loadUrl(BASE + "index.html");
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        Updater.handleInstallStatus(this, intent);
+    }
+
+    /** Writes any crash to a file, shown in Settings, Updates, "Update log" on the next start. */
+    private static void installCrashLog(final Activity a) {
+        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        if (previous != null && previous.getClass().getName().startsWith("dev.printwatch")) return;
+        final android.content.Context app = a.getApplicationContext();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            Updater.log(app, "CRASH in thread " + t.getName() + ": " + Updater.stack(e));
+            if (previous != null) previous.uncaughtException(t, e);
+        });
     }
 
     @Override
@@ -392,8 +411,30 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         /** Check GitHub now and install a newer version if there is one. */
         @JavascriptInterface
         public void checkUpdate() {
-            JSONObject c = config();
-            updater.check(c.optString("updateToken", ""), true);
+            try {
+                Updater.log(MainActivity.this, "Check requested from settings");
+                JSONObject c = config();
+                updater.check(c.optString("updateToken", ""), true);
+            } catch (Throwable e) {
+                Updater.log(MainActivity.this, "checkUpdate failed: " + Updater.stack(e));
+            }
+        }
+
+        /** The update log (and any crash) for the settings screen. */
+        @JavascriptInterface
+        public String updateLog() {
+            try {
+                java.io.File f = Updater.logFile(MainActivity.this);
+                return f.exists() ? Updater.read(f) : "(empty)";
+            } catch (Throwable e) {
+                return "Could not read the log: " + e;
+            }
+        }
+
+        /** Opens the newest APK on GitHub in the browser: the manual way to update. */
+        @JavascriptInterface
+        public void downloadUpdate() {
+            launch(new Intent(Intent.ACTION_VIEW, Uri.parse(Updater.LATEST_APK)));
         }
 
         @JavascriptInterface
@@ -412,7 +453,11 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
 
         @JavascriptInterface
         public boolean canInstall() {
-            return Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
+            try {
+                return Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
+            } catch (Throwable e) {
+                return false;
+            }
         }
 
         @JavascriptInterface

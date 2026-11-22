@@ -25,7 +25,8 @@ network**. There is no server, no Home Assistant, no kiosk browser and no Bambu 
 
 ## Install on the tablet
 
-1. Download `PrintWatch.apk` from the [Releases page](../../releases) on the tablet.
+1. On the tablet, open this link to download the newest version:
+   **https://github.com/TheMaritimePilot/PrintWatch/releases/latest/download/PrintWatch.apk**
 2. Open it. Android asks to allow installing from this source: allow it, then install.
 3. Open **PrintWatch**. The settings screen appears: enter each printer's
    **name, IP address, serial number and access code** and tap **Save**.
@@ -80,8 +81,9 @@ The code is small and has no third-party libraries:
 
 ## Building
 
-GitHub builds the APK automatically on every push (Actions tab → latest run → *PrintWatch-apk*).
-Pushing a tag like `v1.0.1` publishes it as a release.
+GitHub builds the APK on every push to `main` and publishes it as a new release
+(`v1.0.<build number>`). To update the tablet, download the latest APK again and install it
+over the old one; your settings are kept.
 
 To build yourself, install Android Studio (or the Android SDK + JDK 17) and run:
 

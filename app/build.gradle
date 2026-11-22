@@ -10,8 +10,10 @@ android {
         applicationId 'dev.printwatch'
         minSdk 24          // Android 7.0+, so older tablets work too
         targetSdk 35
-        versionCode 1
-        versionName '1.0'
+        // Every GitHub build gets a higher number, so the tablet accepts it as an update
+        def build = (project.findProperty('buildNumber') ?: '1') as int
+        versionCode build
+        versionName "1.0.${build}"
     }
 
     // A fixed key so every build you make can update the installed app.

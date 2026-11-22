@@ -3,7 +3,6 @@ name: Build APK
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -19,15 +18,21 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Build (GitHub runners have the Android SDK preinstalled)
-        run: ./gradlew --no-daemon assembleRelease
+        run: ./gradlew --no-daemon assembleRelease -PbuildNumber=${{ github.run_number }}
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk PrintWatch.apk
       - uses: actions/upload-artifact@v4
         with:
           name: PrintWatch-apk
           path: PrintWatch.apk
-      - name: Publish release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: PrintWatch 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Install on the tablet: download PrintWatch.apk below and open it.
+            Always-newest link: https://github.com/${{ github.repository }}/releases/latest/download/PrintWatch.apk
           files: PrintWatch.apk

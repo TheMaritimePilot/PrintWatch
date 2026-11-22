@@ -64,6 +64,14 @@ PrintWatch uses the printer's local network connection (the same one Bambu Studi
   printer's settings. Developer Mode disconnects the printer from the Bambu cloud and the
   Bambu Handy app; Bambu Studio / OrcaSlicer in LAN mode keep working.
 
+## Troubleshooting
+
+- **Camera unavailable**: the P1S camera serves only **one viewer at a time**. If the camera view
+  is open in Bambu Studio, OrcaSlicer, Bambu Handy or Home Assistant, close it there; PrintWatch
+  reconnects by itself within 30 seconds.
+- **Printer offline**: check the IP address and access code, and try LAN Only Mode on.
+- **Buttons do nothing**: turn on LAN Only Mode and Developer Mode on the printer (see above).
+
 ## How it works
 
 | Port | Protocol | Used for |

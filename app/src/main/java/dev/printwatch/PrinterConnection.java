@@ -432,8 +432,10 @@ public final class PrinterConnection {
     static String describeCamera(Exception e, String step, boolean gotFrame) {
         String m = String.valueOf(e.getMessage());
         if ("connect".equals(step)) {
-            if (e instanceof SocketTimeoutException) return "Camera port 6000 not responding";
-            if (m.contains("ECONNREFUSED") || m.contains("refused")) return "Camera port 6000 refused the connection";
+            // The P1/A1 camera serves one viewer at a time.
+            String busy = " \u2014 is the camera open in Bambu Studio or Handy? Close it there and it reconnects here.";
+            if (e instanceof SocketTimeoutException) return "Camera not available" + busy;
+            if (m.contains("ECONNREFUSED") || m.contains("refused")) return "Camera not available" + busy;
             if (e instanceof javax.net.ssl.SSLException) return "Camera TLS handshake failed: " + m;
             return "Camera connection failed: " + m;
         }
@@ -443,7 +445,7 @@ public final class PrinterConnection {
         }
         if (e instanceof SocketTimeoutException) return "Camera connected but sends no picture";
         if (e instanceof java.io.EOFException || m.contains("reset") || m.contains("closed"))
-            return "Printer closed the camera connection (camera in use elsewhere, or wrong access code)";
+            return "Printer closed the camera connection" + " \u2014 is the camera open in Bambu Studio or Handy?";
         return "Camera error: " + m;
     }
 

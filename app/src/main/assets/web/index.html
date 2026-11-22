@@ -29,8 +29,13 @@
   </div>
 
   <div id="settings" class="settings hidden">
-    <div class="settings-inner">
+    <div class="settings-bar">
+      <button id="settingsBack" class="ghost">‹ Back</button>
       <h2>Settings</h2>
+      <div class="spacer"></div>
+      <button id="saveTop" class="primary">Save all</button>
+    </div>
+    <div class="settings-inner">
       <p class="hint">
         On each printer's screen: <b>Settings → Network (WLAN)</b> shows the <b>IP address</b> and
         <b>Access Code</b>; <b>Settings → Device</b> (or Bambu Studio → Device) shows the <b>serial number</b>.
@@ -53,10 +58,6 @@
       </label>
       <label class="check"><input type="checkbox" id="optControls"> Show printer controls (pause, stop, light, speed, temperatures, fans)</label>
 
-      <div class="actions">
-        <button id="saveSettings" class="primary">Save</button>
-        <button id="cancelSettings" class="ghost">Cancel</button>
-      </div>
 
       <h3>Filament library on your computer</h3>
       <label class="check"><input type="checkbox" id="optWebLibrary"> Let computers on my home network view and edit the filament library</label>
@@ -80,6 +81,10 @@
       <div class="actions">
         <button id="androidSettings" class="ghost">Android settings</button>
         <button id="homeSettings" class="ghost">Change home app</button>
+      </div>
+      <div class="actions save-all">
+        <button id="saveSettings" class="primary">Save all settings</button>
+        <button id="cancelSettings" class="ghost">Cancel</button>
       </div>
       <p class="hint small" id="version"></p>
     </div>

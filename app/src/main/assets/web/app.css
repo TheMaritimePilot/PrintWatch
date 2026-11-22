@@ -367,3 +367,13 @@ body.remote #libBackup { display: none !important; }
 body.remote .library { position: static; overflow: visible; }
 body.remote { overflow: auto; height: auto; }
 html:has(body.remote) { overflow: auto; height: auto; }
+
+/* settings: bar with Back / Save that stays on screen */
+.settings-bar {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 14px;
+  padding: 10px 20px; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.settings-bar h2 { margin: 0; font-size: 22px; }
+.settings-bar button { padding: 10px 18px; font-size: 16px; }
+.settings-inner { padding-top: 14px; }
+.save-all { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 28px; }

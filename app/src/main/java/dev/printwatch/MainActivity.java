@@ -105,20 +105,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
             setShowWhenLocked(true);
         }
 
-        web = new WebView(this);
-        web.setBackgroundColor(Color.parseColor("#0b0e13"));
-        WebSettings ws = web.getSettings();
-        ws.setJavaScriptEnabled(true);
-        ws.setDomStorageEnabled(true);
-        ws.setMediaPlaybackRequiresUserGesture(false);
-        ws.setAllowFileAccess(false);
-        ws.setAllowContentAccess(false);
-        ws.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        ws.setTextZoom(100);
-        web.addJavascriptInterface(new Bridge(), "Native");
-        web.setWebViewClient(new LocalClient());
-        setContentView(web);
-        web.loadUrl(BASE + "index.html");
+        createDashboard();
     }
 
     @Override
@@ -162,6 +149,26 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     public void onBackPressed() {
         // Never leave the dashboard with Back. Let the page close its settings panel instead.
         web.evaluateJavascript("window.PW && PW.onBack()", null);
+    }
+
+
+    /** Creates the WebView that shows the dashboard (again after a renderer crash). */
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    private void createDashboard() {
+        web = new WebView(this);
+        web.setBackgroundColor(Color.parseColor("#0b0e13"));
+        WebSettings ws = web.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setMediaPlaybackRequiresUserGesture(false);
+        ws.setAllowFileAccess(false);
+        ws.setAllowContentAccess(false);
+        ws.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        ws.setTextZoom(100);
+        web.addJavascriptInterface(new Bridge(), "Native");
+        web.setWebViewClient(new LocalClient());
+        setContentView(web);
+        web.loadUrl(BASE + "index.html");
     }
 
     /** Called by the install receiver when Android reports a failed update. */
@@ -358,8 +365,14 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
             try {
                 new JSONObject(json); // validate
                 prefs.edit().putString("config", json).apply();
-                ui.post(MainActivity.this::startPrinters);
-                ui.post(MainActivity.this::updateLibraryServer);
+                ui.post(() -> {
+                    try {
+                        startPrinters();
+                        updateLibraryServer();
+                    } catch (Throwable e) {
+                        Updater.log(MainActivity.this, "Applying settings failed: " + Updater.stack(e));
+                    }
+                });
             } catch (Exception ignored) { }
         }
 
@@ -524,6 +537,23 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     // ------------------------------------- serve the page and camera frames
 
     private final class LocalClient extends WebViewClient {
+        /**
+         * The page's rendering process died (out of memory, or a crash). Without this the whole
+         * app would be closed; instead the dashboard is rebuilt and the printers keep running.
+         */
+        @Override
+        public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
+            Updater.log(MainActivity.this, "Dashboard renderer stopped (crash: "
+                    + (detail != null && detail.didCrash()) + "), rebuilding it");
+            if (view == web) {
+                web.destroy();
+                createDashboard();
+            } else {
+                view.destroy();
+            }
+            return true;
+        }
+
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             return !HOST.equals(request.getUrl().getHost()); // stay on our own page

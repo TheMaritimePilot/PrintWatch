@@ -40,23 +40,33 @@ final class LibraryServer {
         this.handler = handler;
     }
 
+    private volatile boolean wanted;
+
+    /** Starts listening (in the background: network calls are not allowed on the main thread). */
     synchronized void start() {
-        if (server != null) return;
-        try {
-            final ServerSocket s = new ServerSocket(PORT);
-            server = s;
-            Thread t = new Thread(() -> acceptLoop(s), "library-server");
-            t.setDaemon(true);
-            t.start();
-        } catch (IOException e) {
-            server = null;
-        }
+        if (wanted) return;
+        wanted = true;
+        Thread t = new Thread(() -> {
+            try {
+                ServerSocket s = new ServerSocket(PORT);
+                synchronized (LibraryServer.this) {
+                    if (!wanted) { s.close(); return; }
+                    server = s;
+                }
+                acceptLoop(s);
+            } catch (IOException e) {
+                synchronized (LibraryServer.this) { wanted = false; server = null; }
+            }
+        }, "library-server");
+        t.setDaemon(true);
+        t.start();
     }
 
     synchronized void stop() {
-        ServerSocket s = server;
+        wanted = false;
+        final ServerSocket s = server;
         server = null;
-        if (s != null) try { s.close(); } catch (IOException ignored) { }
+        if (s != null) new Thread(() -> { try { s.close(); } catch (IOException ignored) { } }).start();
     }
 
     boolean running() { return server != null; }

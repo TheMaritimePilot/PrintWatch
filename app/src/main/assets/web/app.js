@@ -618,6 +618,8 @@
     updateClock();
   });
   $('cancelSettings').addEventListener('click', function () { $('settings').classList.add('hidden'); });
+  $('settingsBack').addEventListener('click', function () { $('settings').classList.add('hidden'); });
+  $('saveTop').addEventListener('click', function () { $('saveSettings').click(); });
   $('openSettings').addEventListener('click', openSettings);
   $('welcomeSetup').addEventListener('click', openSettings);
   $('androidSettings').addEventListener('click', function () { if (N) N.openAndroidSettings(); });

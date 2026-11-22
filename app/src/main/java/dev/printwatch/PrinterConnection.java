@@ -113,11 +113,17 @@ public final class PrinterConnection {
 
     public synchronized void stop() {
         running = false;
-        MiniMqtt m = mqtt;
-        if (m != null) m.close();
-        SSLSocket s = camSocket;
-        if (s != null) try { s.close(); } catch (IOException ignored) { }
+        final MiniMqtt m = mqtt;
+        final SSLSocket s = camSocket;
         for (Thread t : new Thread[]{mqttThread, pingThread, camThread}) if (t != null) t.interrupt();
+        // Closing a TLS socket sends data, which Android forbids on the screen's main thread
+        // (it kills the app), so close them in the background.
+        Thread closer = new Thread(() -> {
+            if (m != null) m.close();
+            if (s != null) try { s.close(); } catch (IOException ignored) { }
+        }, "close-" + index);
+        closer.setDaemon(true);
+        closer.start();
     }
 
     /**

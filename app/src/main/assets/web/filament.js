@@ -123,7 +123,8 @@
     var sp = spool(data.slots[slotKey(c, slot)]);
     if (!sp) return null;
     var r = remaining(sp);
-    return { text: Math.round(r) + ' g', low: r < data.low, material: sp.material, color: sp.colorHex };
+    return { text: Math.round(r) + ' g', low: r < data.low, material: sp.material, color: sp.colorHex,
+      pct: num(sp.initial) > 0 ? Math.min(100, r / num(sp.initial) * 100) : -1 };
   }
 
   // --------------------------------------------------------------- tracking
@@ -927,7 +928,7 @@
       ],
       slots: {
         '01P00A000000001:0': 'd1', '01P00A000000001:1': 'd2', '01P00A000000001:2': 'd3', '01P00A000000001:3': 'd4',
-        '01P00A000000002:0': 'd5', '01P00A000000002:1': 'd6', '01P00A000000002:3': 'd7'
+        '01P00A000000002:254': 'd5'
       },
       history: [
         { t: t - 3600000 * 5, printer: 'P1S Left', name: 'drawer-divider', result: 'FINISH', pct: 100, items: [{ label: 'Bambu Lab PETG HF · Gray', color: '#a6a9aa', slot: 'A2', g: 142.6, cost: 3.14 }] },

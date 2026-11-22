@@ -7,7 +7,7 @@
   var REMOTE = !!window.PW_REMOTE; // the filament library opened from a computer's browser
   var DEMO = !N && !REMOTE;
   var DEFAULTS = { printers: [], dim: true, dimLevel: 8, sound: true, clock24: true, controls: true,
-    autoUpdate: true, updateToken: '', orientation: 'auto', webLibrary: false };
+    autoUpdate: true, updateToken: '', orientation: 'auto', webLibrary: false, amsStyle: 'real' };
 
   var STATUS = {
     IDLE: ['Idle', 'idle'], INIT: ['Starting', 'prep'], SLICING: ['Slicing', 'prep'],
@@ -290,9 +290,9 @@
     var items = [];
     var all = F.trays(p);
     units.forEach(function (u, ui) {
-      items.push({ info: true, temp: u.temp, hum: u.humidity_raw ? u.humidity_raw + '%' : (u.humidity ? 'Level ' + u.humidity : '') });
+      items.push({ info: true, unit: ui, temp: u.temp, hum: u.humidity_raw ? u.humidity_raw + '%' : (u.humidity ? 'Level ' + u.humidity : '') });
       all.forEach(function (t) {
-        if (t.unit === u) items.push(trayItem(c, t, job && now === String(t.slot)));
+        if (t.unit === u) { var it = trayItem(c, t, job && now === String(t.slot)); it.unit = ui; items.push(it); }
       });
     });
     all.forEach(function (t) {
@@ -301,10 +301,13 @@
         items.push(trayItem(c, t, job && (now === '254' || (!units.length && now === '255'))));
       }
     });
-    var key = JSON.stringify(items) + F.version();
+    var real = cfg.amsStyle !== 'compact';
+    var key = JSON.stringify(items) + F.version() + real;
     if (key === c.amsKey) return;
     c.amsKey = key;
     c.ams.textContent = '';
+    c.ams.classList.toggle('real', real);
+    if (real) { renderAmsReal(c, items); return; }
     items.forEach(function (it) {
       if (it.info) {
         var inf = el('div', 'amsinfo');
@@ -328,6 +331,119 @@
     });
   }
 
+
+  // ------------------------------------------------- AMS illustration
+
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  var svgSeq = 0;
+
+  /** Light text on dark filament, dark text on light filament. */
+  function inkFor(hex) {
+    var v = parseInt(String(hex || '#888888').slice(1, 7), 16);
+    var lum = (0.299 * (v >> 16) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255)) / 255;
+    return lum > 0.6 ? '#1a1d22' : '#ffffff';
+  }
+
+  /** Draws each AMS unit with its four spools, and the external spool on its holder. */
+  function renderAmsReal(c, items) {
+    var units = {}, order = [], ext = null;
+    items.forEach(function (it) {
+      if (it.info) { units[it.unit] = { info: it, trays: [] }; order.push(it.unit); }
+      else if (it.slot === 254) ext = it;
+      else if (units[it.unit]) units[it.unit].trays.push(it);
+    });
+    var html = '';
+    order.forEach(function (u) { html += amsSvg(units[u], u, order.length > 1); });
+    if (ext) html += extSvg(ext);
+    c.ams.innerHTML = html;
+  }
+
+  function amsSvg(unit, index, numbered) {
+    var id = 'a' + (++svgSeq);
+    var info = unit.info;
+    var parts = [];
+    if (info.temp != null && info.temp !== '') parts.push('🌡 ' + Math.round(num(info.temp)) + '°C');
+    if (info.hum) parts.push('💧 ' + info.hum);
+    var s = '<svg class="amssvg" viewBox="0 0 420 262" role="img" aria-label="AMS">' +
+      '<defs>' +
+      '<pattern id="' + id + 'w" width="5" height="10" patternUnits="userSpaceOnUse">' +
+      '<rect x="0" width="1.6" height="10" fill="#000" opacity=".22"/>' +
+      '<rect x="2.6" width="1" height="10" fill="#fff" opacity=".10"/></pattern>' +
+      '<linearGradient id="' + id + 'r" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".55"/>' +
+      '<stop offset=".28" stop-color="#fff" stop-opacity=".10"/><stop offset=".5" stop-color="#fff" stop-opacity=".22"/>' +
+      '<stop offset=".72" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></linearGradient>' +
+      '<linearGradient id="' + id + 'l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/>' +
+      '<stop offset=".35" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity=".02"/></linearGradient>' +
+      '<linearGradient id="' + id + 'b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a414b"/><stop offset="1" stop-color="#22272e"/></linearGradient>' +
+      '</defs>' +
+      '<rect x="6" y="4" width="408" height="254" rx="20" fill="url(#' + id + 'b)" stroke="#4a525e"/>' +
+      // header strip: unit name, temperature and humidity
+      '<text x="24" y="27" class="t-info">' + (numbered ? 'AMS ' + (index + 1) : 'AMS') + '</text>' +
+      (parts.length ? '<text x="396" y="27" class="t-info" text-anchor="end">' + esc(parts.join('   ')) + '</text>' : '') +
+      '<rect x="16" y="38" width="388" height="118" rx="14" fill="#0c0f13"/>';
+    unit.trays.forEach(function (t, i) {
+      var x = 26 + i * 95;
+      var col = t.type && t.color ? t.color : null;
+      s += '<g class="bay' + (t.active ? ' on' : '') + '" data-tray="' + esc(t.slot) + '">';
+      s += '<rect x="' + x + '" y="44" width="84" height="106" rx="7" fill="#1b2027"/>';
+      if (col) {
+        var h = Math.max(10, Math.round(94 * Math.min(100, Math.max(0, num(t.pct, 100))) / 100));
+        var y = 146 - h;
+        s += '<rect x="' + (x + 7) + '" y="' + y + '" width="70" height="' + h + '" rx="3" fill="' + esc(col) + '"/>' +
+          '<rect x="' + (x + 7) + '" y="' + y + '" width="70" height="' + h + '" fill="url(#' + id + 'w)"/>' +
+          '<rect x="' + (x + 7) + '" y="' + y + '" width="70" height="' + h + '" fill="url(#' + id + 'r)"/>';
+      } else {
+        s += '<rect x="' + (x + 30) + '" y="56" width="24" height="90" rx="4" fill="#2a3039"/>' +
+          '<text x="' + (x + 42) + '" y="101" class="t-empty" text-anchor="middle" transform="rotate(-90 ' + (x + 42) + ' 101)">EMPTY</text>';
+      }
+      s += '<rect x="' + x + '" y="44" width="5" height="106" rx="2" fill="#5b6470"/>' +
+        '<rect x="' + (x + 79) + '" y="44" width="5" height="106" rx="2" fill="#5b6470"/>';
+      s += '<rect x="' + (x + 12) + '" y="162" width="60" height="22" rx="5" fill="#161a20" stroke="#3d4450"/>' +
+        '<rect x="' + (x + 29) + '" y="165" width="26" height="8" rx="2" fill="#c98a2b" opacity=".85"/>' +
+        '<rect x="' + (x + 1) + '" y="190" width="82" height="60" rx="9" fill="' + (t.active ? '#1f3a5c' : '#0f1216') + '" stroke="' +
+        (t.active ? 'var(--accent, #4c9aff)' : '#46505c') + '"/>' +
+        '<text x="' + (x + 42) + '" y="214" class="t-type" text-anchor="middle">' + esc(t.type || '—') + '</text>' +
+        '<text x="' + (x + 42) + '" y="238" class="t-amt' + (t.low ? ' low' : '') + '" text-anchor="middle">' +
+        esc(t.amount || t.name) + '</text>';
+      if (t.active) s += '<rect x="' + (x - 3) + '" y="40" width="90" height="214" rx="10" class="bay-ring"/>';
+      s += '</g>';
+    });
+    s += '<rect x="16" y="38" width="388" height="118" rx="14" fill="url(#' + id + 'l)" pointer-events="none"/>' +
+      '<path d="M30 44 L170 44 L120 150 L30 150 Z" fill="#fff" opacity=".035" pointer-events="none"/>';
+    return s + '</svg>';
+  }
+
+  function extSvg(t) {
+    var col = t.type && t.color ? t.color : null;
+    var pct = Math.min(100, Math.max(0, num(t.pct, 100)));
+    var outer = 26 + Math.round(33 * pct / 100);
+    var s = '<svg class="amssvg ext" viewBox="0 0 150 262" role="img" aria-label="External spool">' +
+      '<g class="bay' + (t.active ? ' on' : '') + '" data-tray="254">' +
+      '<rect x="6" y="4" width="138" height="254" rx="20" fill="#1b2027" stroke="#3d4450"/>' +
+      '<text x="75" y="27" class="t-info" text-anchor="middle">External</text>' +
+      '<rect x="71" y="34" width="8" height="30" rx="3" fill="#5b6470"/>' +           // holder arm
+      '<circle cx="75" cy="112" r="64" fill="#2b313a" stroke="#5b6470" stroke-width="3"/>';  // flange
+    if (col) {
+      s += '<circle cx="75" cy="112" r="' + outer + '" fill="' + esc(col) + '"/>';
+      for (var r = 26; r < outer; r += 4) {
+        s += '<circle cx="75" cy="112" r="' + r + '" fill="none" stroke="#000" stroke-opacity=".16" stroke-width="1.2"/>';
+      }
+    }
+    s += '<circle cx="75" cy="112" r="24" fill="#3a414b" stroke="#6b7480" stroke-width="2"/>' +
+      '<circle cx="75" cy="112" r="9" fill="#0c0f13"/>' +
+      '<path d="M31 70 A64 64 0 0 1 75 48" stroke="#fff" stroke-opacity=".18" stroke-width="3" fill="none"/>' +
+      '<rect x="12" y="190" width="126" height="60" rx="9" fill="' + (t.active ? '#1f3a5c' : '#0f1216') + '" stroke="' +
+      (t.active ? 'var(--accent, #4c9aff)' : '#46505c') + '"/>' +
+      '<text x="75" y="214" class="t-type" text-anchor="middle">' + esc(t.type || '—') + '</text>' +
+      '<text x="75" y="238" class="t-amt' + (t.low ? ' low' : '') + '" text-anchor="middle">' + esc(t.amount || 'no spool linked') + '</text>';
+    if (t.active) s += '<rect x="3" y="1" width="144" height="260" rx="22" class="bay-ring"/>';
+    return s + '</g></svg>';
+  }
+
   /** One AMS / external slot for the dashboard; a linked spool's grams replace the AMS estimate. */
   function trayItem(c, t, active) {
     var lab = window.PWFil.trayLabel(c, t.slot);
@@ -335,7 +451,8 @@
     var color = t.type ? t.color : (lab ? lab.color : null);
     return {
       slot: t.slot, name: t.slot === 254 ? 'Ext' : t.name, type: type, color: color, active: active,
-      amount: lab ? lab.text : (t.type && t.remain >= 0 ? t.remain + '%' : ''), low: lab ? lab.low : false
+      amount: lab ? lab.text : (t.type && t.remain >= 0 ? t.remain + '%' : ''), low: lab ? lab.low : false,
+      pct: lab && lab.pct >= 0 ? lab.pct : (t.remain >= 0 ? t.remain : 100)
     };
   }
 
@@ -531,6 +648,7 @@
     $('optControls').checked = !!draft.controls;
     $('optAutoUpdate').checked = draft.autoUpdate !== false;
     $('optOrientation').value = draft.orientation || 'auto';
+    $('optAmsStyle').value = draft.amsStyle || 'real';
     $('optWebLibrary').checked = !!draft.webLibrary;
     showWebAddress();
     $('optToken').value = draft.updateToken || '';
@@ -606,6 +724,7 @@
     draft.controls = $('optControls').checked;
     draft.autoUpdate = $('optAutoUpdate').checked;
     draft.orientation = $('optOrientation').value;
+    draft.amsStyle = $('optAmsStyle').value;
     draft.webLibrary = $('optWebLibrary').checked;
     draft.updateToken = $('optToken').value.trim();
     cfg = draft;
@@ -752,8 +871,8 @@
     var base = {
       wifi_signal: i ? '-61dBm' : '-48dBm', spd_lvl: 2, cooling_fan_speed: '15', big_fan1_speed: '0', big_fan2_speed: '6',
       lights_report: [{ node: 'chamber_light', mode: 'on' }], hms: [], print_error: 0,
-      ams: { tray_now: i ? '0' : '1', ams: [{ id: '0', temp: '27.4', humidity: '4', humidity_raw: i ? '31' : '26', tray: trays }] },
-      vt_tray: { id: '254', tray_type: '', tray_color: '00000000' }
+      ams: i ? { tray_now: '254' } : { tray_now: '1', ams: [{ id: '0', temp: '27.4', humidity: '4', humidity_raw: '26', tray: trays }] },
+      vt_tray: i ? { id: '254', tray_type: 'PLA', tray_color: '00AE42FF' } : { id: '254', tray_type: '', tray_color: '00000000' }
     };
     if (i % 2 === 0) {
       return {

@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'dev.printwatch'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'dev.printwatch'
+        minSdk 24          // Android 7.0+, so older tablets work too
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // A fixed key so every build you make can update the installed app.
+    // This is only for your own sideloaded app, not for the Play Store.
+    signingConfigs {
+        release {
+            storeFile file('../keystore/printwatch.jks')
+            storePassword 'printwatch'
+            keyAlias 'printwatch'
+            keyPassword 'printwatch'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

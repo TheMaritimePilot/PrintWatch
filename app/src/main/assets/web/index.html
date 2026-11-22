@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>PrintWatch</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="clock"><span id="time">--:--</span><span id="date"></span></div>
+    <div id="summary" class="summary"></div>
+    <button id="openSettings" class="iconbtn" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+    </button>
+  </header>
+
+  <main id="grid" class="grid"></main>
+
+  <div id="welcome" class="welcome hidden">
+    <h1>PrintWatch</h1>
+    <p>No printers set up yet.</p>
+    <button class="primary" id="welcomeSetup">Add your printers</button>
+  </div>
+
+  <div id="settings" class="settings hidden">
+    <div class="settings-inner">
+      <h2>Settings</h2>
+      <p class="hint">
+        On each printer's screen: <b>Settings → Network (WLAN)</b> shows the <b>IP address</b> and
+        <b>Access Code</b>; <b>Settings → Device</b> (or Bambu Studio → Device) shows the <b>serial number</b>.
+        Give each printer a fixed IP address in your router.
+      </p>
+      <div id="printerForms"></div>
+      <button id="addPrinter" class="ghost">+ Add printer</button>
+
+      <h3>Screen</h3>
+      <label class="check"><input type="checkbox" id="optDim"> Dim the screen when no printer is busy</label>
+      <label class="range">Dimmed brightness <input type="range" id="optDimLevel" min="1" max="60" step="1"> <span id="optDimLevelVal"></span></label>
+      <label class="check"><input type="checkbox" id="optSound"> Play a sound when a print finishes, fails or pauses</label>
+      <label class="check"><input type="checkbox" id="opt24h"> 24-hour clock</label>
+      <label class="check"><input type="checkbox" id="optControls"> Show printer controls (pause, stop, light, speed, temperatures, fans)</label>
+
+      <div class="actions">
+        <button id="saveSettings" class="primary">Save</button>
+        <button id="cancelSettings" class="ghost">Cancel</button>
+      </div>
+
+      <h3>Tablet</h3>
+      <div class="actions">
+        <button id="androidSettings" class="ghost">Android settings</button>
+        <button id="homeSettings" class="ghost">Change home app</button>
+      </div>
+      <p class="hint small" id="version"></p>
+    </div>
+  </div>
+
+  <div id="dialog" class="dialog hidden">
+    <div class="dlg">
+      <h3 class="dlg-title"></h3>
+      <div class="dlg-body"></div>
+      <div class="dlg-actions"></div>
+    </div>
+  </div>
+
+  <div id="viewer" class="viewer hidden">
+    <img alt="">
+    <div class="viewer-name"></div>
+  </div>
+
+  <template id="cardTpl">
+    <section class="card">
+      <div class="head">
+        <div class="name"></div>
+        <div class="pill"></div>
+        <div class="spacer"></div>
+        <div class="wifi"></div>
+      </div>
+      <div class="cam">
+        <img class="live" alt="">
+        <div class="cam-empty">No camera</div>
+        <img class="model hidden" alt="">
+        <div class="cam-layer"></div>
+      </div>
+      <div class="progress">
+        <div class="prow">
+          <div class="pct"></div>
+          <div class="times">
+            <div class="remain"></div>
+            <div class="eta"></div>
+          </div>
+        </div>
+        <div class="bar"><i></i></div>
+        <div class="file"></div>
+        <div class="fil"></div>
+      </div>
+      <div class="controls">
+        <button class="cbtn light" data-act="light" aria-label="Chamber light">
+          <svg viewBox="0 0 24 24"><path d="M9 21h6v-1H9zm3-19a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"/></svg>
+        </button>
+        <button class="cbtn pause" data-act="pause" aria-label="Pause">
+          <svg class="i-pause" viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+          <svg class="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg>
+        </button>
+        <button class="cbtn stop" data-act="stop" aria-label="Stop">
+          <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+        </button>
+        <button class="cbtn speed" data-act="speed" aria-label="Speed">
+          <svg viewBox="0 0 24 24"><path d="M12 4a10 10 0 0 0-8.7 15h17.4A10 10 0 0 0 12 4zm1.2 10.6a1.8 1.8 0 1 1-2.4-2.4l5.7-4z"/></svg>
+          <span></span>
+        </button>
+      </div>
+      <div class="alert hidden"></div>
+      <div class="stats">
+        <button class="stat" data-set="nozzle"><span class="k">Nozzle</span><span class="v nozzle"></span></button>
+        <button class="stat" data-set="bed"><span class="k">Bed</span><span class="v bed"></span></button>
+        <button class="stat" data-set="fan_part"><span class="k">Part fan</span><span class="v fan-part"></span></button>
+        <button class="stat" data-set="fan_aux"><span class="k">Aux fan</span><span class="v fan-aux"></span></button>
+        <button class="stat" data-set="fan_chamber"><span class="k">Chamber fan</span><span class="v fan-ch"></span></button>
+      </div>
+      <div class="ams"></div>
+      <div class="offline hidden"><div><b>Offline</b><span class="why"></span></div></div>
+    </section>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

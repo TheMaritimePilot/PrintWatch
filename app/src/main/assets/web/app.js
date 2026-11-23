@@ -447,8 +447,9 @@
   /** One AMS / external slot for the dashboard; a linked spool's grams replace the AMS estimate. */
   function trayItem(c, t, active) {
     var lab = window.PWFil.trayLabel(c, t.slot);
-    var type = t.type || (lab ? lab.material : '');
-    var color = t.type ? t.color : (lab ? lab.color : null);
+    // A spool linked from the library wins over what the printer has set for the slot.
+    var type = lab ? (lab.material || t.type) : t.type;
+    var color = lab ? (lab.color || t.color) : t.color;
     return {
       slot: t.slot, name: t.slot === 254 ? 'Ext' : t.name, type: type, color: color, active: active,
       amount: lab ? lab.text : (t.type && t.remain >= 0 ? t.remain + '%' : ''), low: lab ? lab.low : false,

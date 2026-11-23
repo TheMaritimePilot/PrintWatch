@@ -170,6 +170,7 @@ public final class PrinterConnection {
             p.put("command", "ams_filament_setting");
             p.put("ams_id", ams);
             p.put("tray_id", tray);
+            if (external) p.put("slot_id", 0); // Bambu Studio sends this for the external spool
             p.put("tray_info_idx", idx);
             p.put("tray_color", color);
             p.put("nozzle_temp_min", min);

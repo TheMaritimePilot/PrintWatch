@@ -783,7 +783,7 @@
     var ta = el('textarea', 'backup');
     ta.readOnly = true;
     ta.value = N ? N.updateLog() : '(preview)';
-    dialog('Update log', ta, [{ label: 'Close' }], true);
+    dialog('App log', ta, [{ label: 'Close' }], true);
     setTimeout(function () { ta.scrollTop = ta.scrollHeight; }, 50);
   });
   $('updateNote').addEventListener('click', openSettings);

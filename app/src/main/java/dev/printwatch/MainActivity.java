@@ -433,6 +433,12 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
             }
         }
 
+        /** Lets the page write a line to the app log. */
+        @JavascriptInterface
+        public void log(String line) {
+            if (line != null) Updater.log(MainActivity.this, line.length() > 500 ? line.substring(0, 500) : line);
+        }
+
         /** The update log (and any crash) for the settings screen. */
         @JavascriptInterface
         public String updateLog() {

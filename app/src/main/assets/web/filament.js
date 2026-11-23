@@ -102,6 +102,10 @@
     return m.split(/[ +]/)[0] || 'PLA';
   }
 
+  function applog(line) {
+    if (core.N && core.N.log) core.N.log(line); else if (window.console) console.log(line);
+  }
+
   /** Tells the printer which filament is now in a slot, so Bambu Studio and its screen agree. */
   function pushToPrinter(printer, slot, sp) {
     if (!sp || data.syncPrinter === false || core.REMOTE) return;
@@ -115,10 +119,19 @@
     var p = card.state && card.state.print;
     if (p && trays(p).some(function (t) { return t.slot === slot && t.rfid; })) return;
     var preset = presetFor(sp.material);
+    var color = String(sp.colorHex || '#ffffff').replace('#', '');
     core.command(card, 'filament', JSON.stringify({
-      ams: ams, tray: tray, type: baseType(sp.material), color: String(sp.colorHex || '#ffffff').replace('#', ''),
+      ams: ams, tray: tray, type: baseType(sp.material), color: color,
       idx: preset[1], min: preset[2], max: preset[3]
     }));
+    // Check what the printer stored, and write it to the app log (Settings, Updates, App log).
+    var where = (card.cfg.name || printer) + ' ' + slotLabel(slot);
+    applog('Sent to ' + where + ': ' + baseType(sp.material) + ' #' + color.toUpperCase() + ' (' + preset[1] + ')');
+    setTimeout(function () {
+      var now = null;
+      trays((card.state && card.state.print) || {}).forEach(function (t) { if (t.slot === slot) now = t; });
+      applog('Printer now reports ' + where + ': ' + (now ? (now.type || '(no type)') + ' ' + (now.color || '(no colour)').toUpperCase() : '(slot not reported)'));
+    }, 6000);
   }
 
   function assign(c, slot, id) {

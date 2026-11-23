@@ -182,6 +182,16 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         });
     }
 
+    private final Map<String, JSONObject> sdCache = new HashMap<>();
+
+    private File sdThumbDir() {
+        return new File(getCacheDir(), "sdthumbs");
+    }
+
+    private void jsCall(final String script) {
+        ui.post(() -> web.evaluateJavascript("window.PW && " + script, null));
+    }
+
     private void updateLibraryServer() {
         if (config().optBoolean("webLibrary", false)) libraryServer.start(); else libraryServer.stop();
     }
@@ -433,6 +443,44 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
             }
         }
 
+        /** Lists the print files on a printer's SD card; the answer comes back as PW.onSdList(index, json). */
+        @JavascriptInterface
+        public void sdList(final int index) {
+            final PrinterConnection p = printer(index);
+            new Thread(() -> {
+                JSONObject res = new JSONObject();
+                try {
+                    if (p == null) throw new Exception("Printer not found");
+                    res.put("files", p.listFiles());
+                } catch (Throwable e) {
+                    try { res.put("error", e.getMessage() == null ? e.toString() : e.getMessage()); } catch (Exception ignored) { }
+                }
+                jsCall("PW.onSdList(" + index + "," + res + ")");
+            }, "sd-list").start();
+        }
+
+        /** Reads plates and filaments of one print file; answer: PW.onSdInfo(index, path, json). */
+        @JavascriptInterface
+        public void sdInfo(final int index, final String path, final long size) {
+            final PrinterConnection p = printer(index);
+            final String key = Integer.toHexString((path + "|" + size).hashCode()).replace('-', 'n');
+            new Thread(() -> {
+                JSONObject res;
+                try {
+                    if (p == null) throw new Exception("Printer not found");
+                    synchronized (sdCache) { res = sdCache.get(key); }
+                    if (res == null) {
+                        res = p.projectInfo(path, sdThumbDir(), key);
+                        synchronized (sdCache) { sdCache.put(key, res); }
+                    }
+                } catch (Throwable e) {
+                    res = new JSONObject();
+                    try { res.put("error", e.getMessage() == null ? e.toString() : e.getMessage()); } catch (Exception ignored) { }
+                }
+                jsCall("PW.onSdInfo(" + index + "," + JSONObject.quote(path) + "," + res + ")");
+            }, "sd-info").start();
+        }
+
         /** Lets the page write a line to the app log. */
         @JavascriptInterface
         public void log(String line) {
@@ -573,6 +621,21 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
                         null, new ByteArrayInputStream(new byte[0]));
             }
             String path = url.getPath() == null ? "/" : url.getPath();
+            if (path.startsWith("/sd/")) {
+                String name = path.substring(4);
+                File f = new File(sdThumbDir(), name);
+                Map<String, String> headers = new HashMap<>();
+                headers.put("Cache-Control", "max-age=3600");
+                if (!name.matches("[0-9a-zn]+_\\d+\\.png") || !f.exists()) {
+                    return new WebResourceResponse("image/png", null, 404, "Not found", headers,
+                            new ByteArrayInputStream(new byte[0]));
+                }
+                try {
+                    return new WebResourceResponse("image/png", null, 200, "OK", headers, new FileInputStream(f));
+                } catch (IOException e) {
+                    return null;
+                }
+            }
             boolean cam = path.startsWith("/cam/"), model = path.startsWith("/model/");
             if (cam || model) {
                 int idx = -1;

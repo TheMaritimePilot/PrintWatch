@@ -56,23 +56,13 @@ final class ModelFetcher {
     Result fetch(String taskName, String gcodeFile, File cacheDir) throws IOException {
         File tmp = new File(cacheDir, "job.3mf");
         try {
-            control = MiniMqtt.openTls(host, 990, 8000, 30000);
-            reader = new BufferedReader(new InputStreamReader(control.getInputStream(), StandardCharsets.UTF_8));
-            writer = control.getOutputStream();
-            expect(reply(), 220);
-            int r = cmd("USER bblp");
-            if (r == 331) expect(cmd("PASS " + accessCode), 230);
-            else expect(r, 230);
-            cmd("PBSZ 0");
-            expect(cmd("PROT P"), 200);
-            expect(cmd("TYPE I"), 200);
-
+            open();
             String path = findFile(taskName, gcodeFile);
             if (path == null) throw new IOException("Job file not found on SD card");
             download(path, tmp);
-            try { cmd("QUIT"); } catch (IOException ignored) { }
+            quit();
         } finally {
-            if (control != null) try { control.close(); } catch (IOException ignored) { }
+            closeQuietly();
         }
         try {
             return parse3mf(tmp, plateNumber(gcodeFile));
@@ -87,7 +77,151 @@ final class ModelFetcher {
         return m.find() ? Integer.parseInt(m.group(1)) : 1;
     }
 
+    // ---------------------------------------------- files on the SD card
+
+    /** The print files (.3mf) on the SD card: [{path, name, size, date}], newest first where known. */
+    JSONArray listPrintFiles() throws IOException {
+        JSONArray out = new JSONArray();
+        try {
+            open();
+            for (String dir : new String[]{"/", "/cache"}) {
+                for (String line : listLong(dir)) {
+                    Matcher m = LIST_LINE.matcher(line);
+                    if (!m.matches() || !m.group(1).equals("-")) continue;
+                    String name = m.group(4);
+                    if (!name.toLowerCase(Locale.ROOT).endsWith(".3mf")) continue;
+                    try {
+                        JSONObject f = new JSONObject();
+                        f.put("path", (dir.equals("/") ? "" : dir.substring(1) + "/") + name);
+                        f.put("name", name);
+                        f.put("size", Long.parseLong(m.group(2)));
+                        f.put("date", m.group(3).replaceAll("\\s+", " "));
+                        out.put(f);
+                    } catch (Exception ignored) { }
+                }
+            }
+            quit();
+        } finally {
+            closeQuietly();
+        }
+        return out;
+    }
+
+    // "-rw-r--r--    1 0  0   1234567 Nov 22 10:00 name.3mf"
+    private static final Pattern LIST_LINE =
+            Pattern.compile("^([-dl])\\S*\\s+\\d+\\s+\\S+\\s+\\S+\\s+(\\d+)\\s+(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+(.+)$");
+
+    /**
+     * Downloads a print file and describes its plates: preview images are written to
+     * thumbDir as key_N.png.
+     * @return {plates:[{plate, thumb, seconds, grams, filaments:[{id,type,color,grams}]}]}
+     */
+    JSONObject projectInfo(String path, File cacheDir, File thumbDir, String key) throws Exception {
+        if (path.contains("..")) throw new IOException("Bad path");
+        File tmp = new File(cacheDir, "project.3mf");
+        try {
+            open();
+            download("/" + path, tmp);
+            quit();
+        } finally {
+            closeQuietly();
+        }
+        try {
+            return describe3mf(tmp, thumbDir, key);
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+        }
+    }
+
+    static JSONObject describe3mf(File file, File thumbDir, String key) throws Exception {
+        JSONObject info = new JSONObject();
+        JSONArray plates = new JSONArray();
+        //noinspection ResultOfMethodCallIgnored
+        thumbDir.mkdirs();
+        try (ZipFile zip = new ZipFile(file)) {
+            String xml = "";
+            ZipEntry si = zip.getEntry("Metadata/slice_info.config");
+            if (si != null) xml = new String(readAll(zip.getInputStream(si)), StandardCharsets.UTF_8);
+            for (int n = 1; n <= 64; n++) {
+                if (zip.getEntry("Metadata/plate_" + n + ".gcode") == null) continue; // not sliced
+                JSONObject p = new JSONObject();
+                p.put("plate", n);
+                ZipEntry png = zip.getEntry("Metadata/plate_" + n + ".png");
+                if (png != null) {
+                    File out = new File(thumbDir, key + "_" + n + ".png");
+                    try (FileOutputStream fo = new FileOutputStream(out)) { fo.write(readAll(zip.getInputStream(png))); }
+                    p.put("thumb", out.getName());
+                }
+                String body = plateXml(xml, n);
+                p.put("seconds", parseD(meta(body, "prediction")));
+                p.put("grams", parseD(meta(body, "weight")));
+                p.put("filaments", filamentsForPlate(xml, n));
+                plates.put(p);
+            }
+        }
+        info.put("plates", plates);
+        return info;
+    }
+
+    private static String plateXml(String xml, int plate) {
+        Matcher plates = Pattern.compile("<plate>(.*?)</plate>", Pattern.DOTALL).matcher(xml);
+        while (plates.find()) {
+            String body = plates.group(1);
+            if (plate == num(meta(body, "index"), 1)) return body;
+        }
+        return "";
+    }
+
+    private static String meta(String body, String key) {
+        Matcher m = Pattern.compile("key=\"" + key + "\"\\s+value=\"([^\"]*)\"").matcher(body);
+        return m.find() ? m.group(1) : "";
+    }
+
+    private static int num(String s, int d) {
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return d; }
+    }
+
     // ------------------------------------------------------------ FTP
+
+    private void open() throws IOException {
+        control = MiniMqtt.openTls(host, 990, 8000, 30000);
+        reader = new BufferedReader(new InputStreamReader(control.getInputStream(), StandardCharsets.UTF_8));
+        writer = control.getOutputStream();
+        expect(reply(), 220);
+        int r = cmd("USER bblp");
+        if (r == 331) expect(cmd("PASS " + accessCode), 230);
+        else expect(r, 230);
+        cmd("PBSZ 0");
+        expect(cmd("PROT P"), 200);
+        expect(cmd("TYPE I"), 200);
+    }
+
+    private void quit() {
+        try { cmd("QUIT"); } catch (IOException ignored) { }
+    }
+
+    private void closeQuietly() {
+        if (control != null) try { control.close(); } catch (IOException ignored) { }
+        control = null;
+    }
+
+    /** LIST of a folder (long format, one line per entry). */
+    private List<String> listLong(String dir) throws IOException {
+        List<String> out = new ArrayList<>();
+        Socket raw = openData();
+        int r = cmd("LIST " + dir);
+        if (r != 150 && r != 125) { raw.close(); return out; }
+        try {
+            BufferedReader in = new BufferedReader(new InputStreamReader(secure(raw), StandardCharsets.UTF_8));
+            String line;
+            while ((line = in.readLine()) != null) if (!line.trim().isEmpty()) out.add(line.trim());
+        } finally {
+            raw.close();
+        }
+        reply(); // 226
+        return out;
+    }
 
     private String findFile(String taskName, String gcodeFile) throws IOException {
         List<String> candidates = new ArrayList<>();

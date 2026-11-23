@@ -135,6 +135,10 @@ def handle_command(msg, s, lock):
     elif cmd == "stop": delta.update(gcode_state="FAILED", print_error=50348044)
     elif cmd == "print_speed": delta["spd_lvl"] = int(p["param"])
     elif cmd == "ledctrl": delta["lights_report"] = [{"node": "chamber_light", "mode": sysm["led_mode"]}]
+    elif cmd == "project_file":
+        log("START PRINT", p["url"], p["param"], "use_ams", p["use_ams"], "mapping", p["ams_mapping"])
+        delta.update(gcode_state="PREPARE", subtask_name=p["subtask_name"], gcode_file=p["url"].replace("file:///sdcard/", ""),
+                     mc_percent=0, layer_num=0, print_error=0)
     elif cmd == "ams_filament_setting":
         info = {"tray_type": p["tray_type"], "tray_color": p["tray_color"], "tray_info_idx": p["tray_info_idx"],
                 "nozzle_temp_min": str(p["nozzle_temp_min"]), "nozzle_temp_max": str(p["nozzle_temp_max"])}
@@ -192,7 +196,25 @@ def make_3mf():
 </plate></config>""")
     return b.getvalue()
 
-FILES = {"/cache/bin-1x1x5.3mf": make_3mf()}
+def make_multi_3mf():
+    """A sliced project with two plates; plate 2 uses three filaments."""
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        for n in (1, 2):
+            z.writestr(f"Metadata/plate_{n}.gcode", f"; plate {n}\nG28\n")
+            z.writestr(f"Metadata/plate_{n}.png", b"\x89PNG\r\n\x1a\nFAKEPNG" + bytes([n]))
+        z.writestr("Metadata/slice_info.config", """<?xml version="1.0" encoding="UTF-8"?>
+<config>
+<plate><metadata key="index" value="1"/><metadata key="prediction" value="3720"/><metadata key="weight" value="41.20"/>
+<filament id="1" type="PLA" color="#00AE42" used_m="13.8" used_g="41.20" /></plate>
+<plate><metadata key="index" value="2"/><metadata key="prediction" value="9300"/><metadata key="weight" value="118.40"/>
+<filament id="1" type="PLA" color="#00AE42" used_m="30.1" used_g="90.10" />
+<filament id="2" type="PETG" color="#888888" used_m="5.0" used_g="15.00" />
+<filament id="3" type="PETG" color="#1E4FD8" used_m="4.4" used_g="13.30" /></plate>
+</config>""")
+    return b.getvalue()
+
+FILES = {"/cache/bin-1x1x5.3mf": make_3mf(), "/moose-figure.gcode.3mf": make_multi_3mf()}
 
 def ftp_client(conn):
     s = ctx.wrap_socket(conn, server_side=True)
@@ -220,6 +242,22 @@ def ftp_client(conn):
             port = pasv.getsockname()[1]
             h = args.host.replace(".", ",")
             say(f"227 Entering Passive Mode ({h},{port >> 8},{port & 255}).")
+        elif cmd == "LIST":
+            dconn, _ = pasv.accept()
+            say("150 Here comes the directory listing.")
+            d = ctx.wrap_socket(dconn, server_side=True)
+            if not d.session_reused:
+                d.close(); say("522 SSL connection failed: session reuse required"); continue
+            folder = (arg or "/").rstrip("/") + "/"
+            lines = []
+            for path, data in FILES.items():
+                head, name = path.rsplit("/", 1)
+                if head + "/" == folder:
+                    lines.append(f"-rw-r--r--    1 0        0        {len(data):>9} Nov 22 10:0{len(lines)} {name}")
+            if folder == "/":
+                lines.append("drwxr-xr-x    2 0        0             4096 Nov 20 09:00 cache")
+            d.sendall(("\r\n".join(lines) + "\r\n").encode()); d.close()
+            say("226 Directory send OK.")
         elif cmd in ("RETR", "NLST"):
             if cmd == "RETR" and arg not in FILES:
                 say("550 Failed to open file."); continue

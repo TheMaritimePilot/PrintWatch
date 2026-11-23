@@ -143,6 +143,7 @@ public final class PrinterConnection {
             case "fan_aux": gcode("M106 P2 S" + fanPwm(value)); break;
             case "fan_chamber": gcode("M106 P3 S" + fanPwm(value)); break;
             case "filament": setFilament(value); break;
+            case "print_file": printFile(value); break;
             default: break;
         }
     }
@@ -180,6 +181,64 @@ public final class PrinterConnection {
         } catch (JSONException ignored) {
             // malformed request from the page: ignore
         }
+    }
+
+    /**
+     * Starts printing a sliced .3mf from the SD card.
+     * value: {"path":"cache/name.3mf", "plate":1, "useAms":true, "mapping":[0,-1,2],
+     *         "bedLevel":true, "timelapse":false, "flowCali":false}
+     */
+    private void printFile(String value) {
+        try {
+            JSONObject v = new JSONObject(value);
+            String path = v.getString("path");
+            if (path.isEmpty() || path.contains("..") || path.startsWith("/") || !path.toLowerCase().endsWith(".3mf")
+                    || !path.matches("[^\\x00-\\x1f\"\\\\]+")) return;
+            int plate = Math.max(1, Math.min(64, v.optInt("plate", 1)));
+            boolean useAms = v.optBoolean("useAms", false);
+            JSONArray mapping = new JSONArray();
+            JSONArray in = v.optJSONArray("mapping");
+            for (int i = 0; in != null && i < in.length() && i < 32; i++) {
+                int t = in.optInt(i, -1);
+                mapping.put(t >= 0 && t <= 15 ? t : -1);
+            }
+            if (!useAms || mapping.length() == 0) mapping = new JSONArray().put(0);
+            boolean bedLevel = v.optBoolean("bedLevel", true), flow = v.optBoolean("flowCali", false);
+            String name = path.substring(path.lastIndexOf('/') + 1).replaceAll("(?i)(\\.gcode)?\\.3mf$", "");
+            JSONObject p = new JSONObject();
+            p.put("sequence_id", seq());
+            p.put("command", "project_file");
+            p.put("param", "Metadata/plate_" + plate + ".gcode");
+            p.put("url", "file:///sdcard/" + path);
+            p.put("bed_type", "auto");
+            p.put("timelapse", v.optBoolean("timelapse", false));
+            p.put("bed_leveling", bedLevel);
+            p.put("auto_bed_leveling", bedLevel ? 1 : 0);
+            p.put("flow_cali", flow);
+            p.put("extrude_cali_flag", flow ? 1 : 0);
+            p.put("vibration_cali", false);
+            p.put("layer_inspect", false);
+            p.put("use_ams", useAms);
+            p.put("ams_mapping", mapping);
+            p.put("subtask_name", name);
+            p.put("profile_id", "0");
+            p.put("project_id", "0");
+            p.put("subtask_id", "0");
+            p.put("task_id", "0");
+            send(new JSONObject().put("print", p).toString());
+        } catch (JSONException ignored) {
+            // malformed request from the page: ignore
+        }
+    }
+
+    /** The print files on this printer's SD card (blocking: call from a background thread). */
+    public JSONArray listFiles() throws java.io.IOException {
+        return new ModelFetcher(cfg.host, cfg.accessCode).listPrintFiles();
+    }
+
+    /** Plates, previews and filament use of a print file (blocking). */
+    public JSONObject projectInfo(String path, File thumbDir, String key) throws Exception {
+        return new ModelFetcher(cfg.host, cfg.accessCode).projectInfo(path, cacheDir, thumbDir, key);
     }
 
     private void printCommand(String cmd, String param) {

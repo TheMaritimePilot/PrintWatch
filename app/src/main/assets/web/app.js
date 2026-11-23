@@ -92,7 +92,7 @@
       alert: q('.alert'), nozzle: q('.nozzle'), bed: q('.bed'), fanPart: q('.fan-part'), fanAux: q('.fan-aux'),
       fanCh: q('.fan-ch'), speedLbl: q('.cbtn.speed span'), ams: q('.ams'),
       offline: q('.offline'), why: q('.offline .why'),
-      btnLight: q('.cbtn.light'), btnPause: q('.cbtn.pause'), btnStop: q('.cbtn.stop'), btnSpeed: q('.cbtn.speed'),
+      btnLight: q('.cbtn.light'), btnPause: q('.cbtn.pause'), btnStop: q('.cbtn.stop'), btnSpeed: q('.cbtn.speed'), btnFiles: q('.cbtn.files'),
       state: null, lastGcode: null, finishedAt: 0, attentionUntil: 0,
       frameBusy: false, frameQueued: false, frameSeq: 0, frameUrl: null, modelKey: '', amsKey: '', filKey: ''
     };
@@ -266,6 +266,7 @@
     c.btnPause.disabled = !online || !(g === 'RUNNING' || g === 'PAUSE');
     c.btnStop.disabled = !online || !(g === 'RUNNING' || g === 'PAUSE' || g === 'PREPARE');
     c.btnSpeed.disabled = !online || !(g === 'RUNNING' || g === 'PAUSE');
+    c.btnFiles.disabled = !online;
 
     // camera
     var camState = c.cfg.camera === false ? 'off' : (s.camera || 'connecting');
@@ -544,6 +545,8 @@
         confirmDialog('Pause ' + name + '?', 'The print will pause until you resume it.', 'Pause', false,
           function () { command(c, 'pause'); });
       }
+    } else if (act === 'files') {
+      window.PWFiles.open(c);
     } else if (act === 'stop') {
       confirmDialog('Stop the print on ' + name + '?', 'This cancels "' + (p.subtask_name || 'the print') +
         '". It cannot be resumed.', 'Stop print', true, function () { command(c, 'stop'); });
@@ -840,6 +843,8 @@
     onState: onState,
     onFrame: onFrame,
     onUpdate: onUpdate,
+    onSdList: function (i, res) { window.PWFiles.onList(i, res); },
+    onSdInfo: function (i, path, res) { window.PWFiles.onInfo(i, path, res); },
     onBack: function () {
       if (!$('dialog').classList.contains('hidden')) closeDialog();
       else if (viewerIndex >= 0) closeViewer();
@@ -922,6 +927,13 @@
     var s = demoStates[c.i];
     if (!s) return;
     var p = s.print;
+    if (action === 'print_file') {
+      var rq = JSON.parse(value);
+      (window.__pwSent = window.__pwSent || []).push({ printer: c.i, print: rq });
+      p.gcode_state = 'PREPARE'; p.subtask_name = rq.path.replace(/^.*\//, '').replace(/(\.gcode)?\.3mf$/, ''); p.mc_percent = 0;
+      onState(c.i, s);
+      return;
+    }
     if (action === 'filament') { (window.__pwSent = window.__pwSent || []).push({ printer: c.i, value: JSON.parse(value) }); return; }
     if (action === 'light') p.lights_report = [{ node: 'chamber_light', mode: value }];
     else if (action === 'pause') p.gcode_state = 'PAUSE';
@@ -973,6 +985,10 @@
     command: command,
     cards: function () { return cards; },
     rerender: function () { cards.forEach(function (c) { c.amsKey = ''; render(c); }); }
+  });
+  window.PWFiles.init({
+    N: N, DEMO: DEMO, el: el, num: num, dialog: dialog, closeDialog: closeDialog,
+    confirmDialog: confirmDialog, command: command
   });
   buildGrid();
   updateClock();

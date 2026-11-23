@@ -21,6 +21,10 @@ network**. There is no server, no Home Assistant, no kiosk browser and no Bambu 
 - Errors and HMS warnings, and the reason for a pause (e.g. filament runout)
 - **Controls**: chamber light, pause / resume, stop (with confirmation), speed mode
   (Silent / Standard / Sport / Ludicrous), set nozzle and bed temperature, set fan speeds
+- **Print from the SD card**: every job you send from Bambu Studio / OrcaSlicer is stored on the
+  printer. The **Files** button lists those files; pick one, choose the plate, check which AMS slot
+  or external spool feeds each colour (suggested automatically, with a warning when a spool may
+  run out), and start the print from the tablet. No slicing on the tablet needed.
 - **Filament library** (like Spoolman, built in):
   - add spools from a catalogue of 85+ brands and thousands of colours, or enter your own
   - every spool has a location: a printer's AMS slot, its external spool holder, the shelf, or your own places

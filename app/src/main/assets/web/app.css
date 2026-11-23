@@ -123,7 +123,7 @@ button { font: inherit; color: inherit; }
 .fil b { color: var(--text); font-weight: 500; }
 
 /* controls */
-.controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 6px 12px 0; flex: none; }
+.controls { display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr 1.3fr; gap: 6px; padding: 6px 12px 0; flex: none; }
 .cbtn {
   height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--card2);
   display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 500;
@@ -404,3 +404,34 @@ html:has(body.remote) { overflow: auto; height: auto; }
   .grid.n2 .amssvg, .grid.n3 .amssvg, .grid.n4 .amssvg { height: clamp(96px, 11.5vh, 170px); }
   .grid.n2 .ams.real { padding-top: 4px; padding-bottom: 8px; }
 }
+
+/* print from SD card */
+.cbtn.files span { font-size: 14px; }
+.sdlist { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.sdrow { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; background: var(--card2); border: 1px solid var(--line); text-align: left; }
+.sdrow .nm { display: flex; flex-direction: column; min-width: 0; }
+.sdrow .nm b { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdrow .nm small { color: var(--muted); font-size: 13px; }
+.sdicon { font-size: 22px; }
+.sdfile { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; }
+.sdfile h4 { margin: 10px 0 2px; font-size: 14px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+.platetabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.platebtn { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 10px; background: var(--card2); border: 2px solid transparent; font-size: 13px; }
+.platebtn.sel { border-color: var(--run); }
+.platebtn img { width: 64px; height: 64px; object-fit: contain; background: #fff; border-radius: 6px; }
+.sdtop { display: flex; gap: 14px; align-items: center; }
+.sdthumb { width: 120px; height: 120px; object-fit: contain; background: #fff; border-radius: 10px; flex: none; }
+.sdfacts { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sdfacts b { font-size: 18px; word-break: break-word; }
+.sdfacts span { color: var(--muted); font-size: 15px; white-space: pre; }
+.maprow { display: flex; align-items: center; gap: 10px; }
+.maprow i { width: 20px; height: 20px; border-radius: 50%; flex: none; border: 1px solid rgba(255,255,255,.3); }
+.maprow .mapname { min-width: 120px; font-size: 15px; }
+.maprow select { flex: 1; min-width: 0; font-size: 15px; padding: 9px; }
+.sdwarn { font-size: 14px; color: #f2d58b; background: rgba(227,179,65,.12); border: 1px solid rgba(227,179,65,.35); border-radius: 8px; padding: 8px 10px; }
+.sdwarn.err { color: #ffb1ab; background: rgba(248,81,73,.12); border-color: rgba(248,81,73,.4); }
+.dlg-actions button:disabled { opacity: .4; }
+.sdfile > * { flex-shrink: 0; }
+.sdfile label.check { margin: 4px 0; }
+.sdopts { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+.sdfacts b { color: var(--text); }

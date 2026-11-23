@@ -767,57 +767,165 @@
     if (tab === 'spools') renderSpools(); else renderHistory();
   }
 
+  // grouping of the spool list: remembered per device
+  var GROUPS = [['location', 'Location'], ['material', 'Material'], ['colour', 'Colour'], ['usage', 'Usage'], ['none', 'No groups']];
+  function groupBy() {
+    try { return localStorage.getItem('pw-group') || 'location'; } catch (e) { return 'location'; }
+  }
+  function setGroupBy(g) {
+    try { localStorage.setItem('pw-group', g); } catch (e) { /* ignore */ }
+    renderSpools();
+  }
+
+  var COLOUR_ORDER = ['White', 'Grey', 'Black', 'Red', 'Orange', 'Brown', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink'];
+  /** A colour family from the spool's colour, e.g. "#0a2989" -> "Blue". */
+  function colourFamily(hex) {
+    var v = parseInt(String(hex || '#888888').slice(1, 7), 16);
+    if (isNaN(v)) return 'Grey';
+    var r = (v >> 16) / 255, g = ((v >> 8) & 255) / 255, b = (v & 255) / 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+    var sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    if (l > 0.9 || (l > 0.85 && sat < 0.3)) return 'White';
+    if (l < 0.13) return 'Black';
+    if (sat < 0.18) return l > 0.85 ? 'White' : l < 0.22 ? 'Black' : 'Grey';
+    var h;
+    if (max === r) h = 60 * (((g - b) / d) % 6); else if (max === g) h = 60 * ((b - r) / d + 2); else h = 60 * ((r - g) / d + 4);
+    if (h < 0) h += 360;
+    if (h >= 345 || h < 15) {
+      if (l > 0.62) return 'Pink';
+      return h < 15 && l < 0.42 ? 'Brown' : 'Red';
+    }
+    if (h < 40) return l < 0.42 ? 'Brown' : 'Orange';
+    if (h < 62) return l < 0.42 ? 'Brown' : 'Yellow';
+    if (h < 160) return 'Green';
+    if (h < 195) return 'Teal';
+    if (h < 245) return 'Blue';
+    if (h < 290) return 'Purple';
+    return 'Pink';
+  }
+
+  var USAGE_ORDER = ['New / unused', 'Partly used', 'Almost empty', 'Used up'];
+  function usageOf(sp) {
+    var r = remaining(sp);
+    if (sp.archived || r <= 0) return 'Used up';
+    if (r < data.low) return 'Almost empty';
+    if (num(sp.used) < 1) return 'New / unused';
+    return 'Partly used';
+  }
+
+  /** Group name and sort key for a spool under the chosen grouping. */
+  function groupOf(sp, by) {
+    if (by === 'material') { var m = (sp.material || 'Other').toUpperCase(); return [m, m]; }
+    if (by === 'colour') { var cf = colourFamily(sp.colorHex); return [cf, ('0' + COLOUR_ORDER.indexOf(cf)).slice(-2)]; }
+    if (by === 'usage') { var u = usageOf(sp); return [u, String(USAGE_ORDER.indexOf(u))]; }
+    if (by === 'location') {
+      var key = locationOf(sp.id);
+      if (key.indexOf('slot:') === 0) {
+        var parts = key.slice(5).split(':');
+        var pi = 0, name = parts[0];
+        printerList().forEach(function (pr, n) { if (pr.key === parts[0]) { pi = n; name = pr.name || name; } });
+        return [name, '0' + pi + '|' + name];
+      }
+      var place = key.slice(6) || 'Shelf';
+      return [place, '1' + (place === 'Shelf' ? '0' : '1') + place.toLowerCase()];
+    }
+    return ['', ''];
+  }
+
   function renderSpools() {
     var listEl = $('spoolList');
     listEl.textContent = '';
+    var by = groupBy();
+    var bar = $('groupBar');
+    bar.textContent = '';
+    GROUPS.forEach(function (g) {
+      var b = el('button', g[0] === by ? 'sel' : '', g[1]);
+      b.addEventListener('click', function () { setGroupBy(g[0]); });
+      bar.appendChild(b);
+    });
     var showAll = $('showArchived').checked;
-    var list = data.spools.filter(function (sp) { return showAll || !sp.archived; });
-    list.sort(function (a, b) {
-      var la = whereLoaded(a.id) ? 0 : 1, lb = whereLoaded(b.id) ? 0 : 1;
-      return la - lb || spoolName(a).localeCompare(spoolName(b));
+    var q = ($('spoolSearch').value || '').trim().toLowerCase();
+    var list = data.spools.filter(function (sp) {
+      if (!showAll && sp.archived) return false;
+      if (!q) return true;
+      var text = (spoolName(sp) + ' ' + (sp.material || '') + ' ' + whereIs(sp.id) + ' ' + colourFamily(sp.colorHex) + ' ' + (sp.note || '')).toLowerCase();
+      return q.split(/\s+/).every(function (w) { return text.indexOf(w) >= 0; });
     });
     var total = 0;
     data.spools.forEach(function (sp) { if (!sp.archived) total += remaining(sp); });
-    $('libTotals').textContent = data.spools.filter(function (sp) { return !sp.archived; }).length + ' spools · ' +
-      (total >= 1000 ? (total / 1000).toFixed(1) + ' kg' : Math.round(total) + ' g') + ' of filament';
-    if (!list.length) {
+    $('libTotals').textContent = data.spools.filter(function (sp) { return !sp.archived; }).length + ' spools \u00b7 ' + kg(total) + ' of filament';
+    if (!data.spools.length) {
       listEl.appendChild(el('p', 'hint', 'No spools yet. Bambu spools with an RFID chip appear here by themselves as soon as ' +
         'they are in an AMS. Add other spools with "+ Add spool", or tap a slot on the dashboard.'));
       return;
     }
+    if (!list.length) { listEl.appendChild(el('p', 'hint', 'No spools match.')); return; }
+
+    var groups = {};
     list.forEach(function (sp) {
-      var card = el('div', 'spool' + (sp.archived ? ' archived' : ''));
-      var top = el('div', 'sp-top');
-      var sw = el('div', 'sp-sw');
-      sw.style.background = sp.colorHex || '#888';
-      top.appendChild(sw);
-      var nm = el('div', 'sp-name');
-      nm.appendChild(el('b', null, spoolTitle(sp)));
-      nm.appendChild(el('span', null, [sp.colorName, sp.rfid ? 'RFID' : ''].filter(Boolean).join(' · ')));
-      top.appendChild(nm);
-      card.appendChild(top);
-      var r = remaining(sp), pct = num(sp.initial) > 0 ? Math.min(100, r / num(sp.initial) * 100) : 0;
-      var bar = el('div', 'sp-bar');
-      var fill = el('i');
-      fill.style.width = pct + '%';
-      fill.style.background = sp.colorHex || '#888';
-      bar.appendChild(fill);
-      card.appendChild(bar);
-      var line = el('div', 'sp-line');
-      line.appendChild(el('b', r < data.low ? 'low' : '', Math.round(r) + ' g'));
-      line.appendChild(document.createTextNode(' left of ' + Math.round(num(sp.initial)) + ' g'));
-      card.appendChild(line);
-      card.appendChild(el('div', 'sp-where' + (whereLoaded(sp.id) ? ' loaded' : ''), '\ud83d\udccd ' + whereIs(sp.id)));
-      var acts = el('div', 'sp-acts');
-      var bw = el('button', 'ghost', 'Weigh');
-      bw.addEventListener('click', function () { weighSpool(sp); });
-      var be = el('button', 'ghost', 'Edit');
-      be.addEventListener('click', function () { editSpool(sp); });
-      acts.appendChild(bw);
-      acts.appendChild(be);
-      card.appendChild(acts);
-      listEl.appendChild(card);
+      var g = groupOf(sp, by);
+      if (!groups[g[1]]) groups[g[1]] = { name: g[0], spools: [] };
+      groups[g[1]].spools.push(sp);
     });
+    Object.keys(groups).sort().forEach(function (k) {
+      var grp = groups[k];
+      grp.spools.sort(function (a, b) {
+        if (by === 'location') return locationOf(a.id).localeCompare(locationOf(b.id), undefined, { numeric: true });
+        return spoolName(a).localeCompare(spoolName(b));
+      });
+      if (by !== 'none') {
+        var sum = 0;
+        grp.spools.forEach(function (sp) { sum += remaining(sp); });
+        var head = el('div', 'grouphead');
+        if (by === 'colour') {
+          var dot = el('i');
+          dot.style.background = grp.spools[0].colorHex || '#888';
+          head.appendChild(dot);
+        }
+        head.appendChild(el('b', null, grp.name));
+        head.appendChild(el('span', null, grp.spools.length + (grp.spools.length === 1 ? ' spool' : ' spools') + ' \u00b7 ' + kg(sum)));
+        listEl.appendChild(head);
+      }
+      var gridEl = el('div', 'spoolgrid');
+      grp.spools.forEach(function (sp) { gridEl.appendChild(spoolCard(sp)); });
+      listEl.appendChild(gridEl);
+    });
+  }
+
+  function kg(g) { return g >= 1000 ? (g / 1000).toFixed(1) + ' kg' : Math.round(g) + ' g'; }
+
+  function spoolCard(sp) {
+    var card = el('div', 'spool' + (sp.archived ? ' archived' : ''));
+    var top = el('div', 'sp-top');
+    var sw = el('div', 'sp-sw');
+    sw.style.background = sp.colorHex || '#888';
+    top.appendChild(sw);
+    var nm = el('div', 'sp-name');
+    nm.appendChild(el('b', null, spoolTitle(sp)));
+    nm.appendChild(el('span', null, [sp.colorName, sp.rfid ? 'RFID' : ''].filter(Boolean).join(' · ')));
+    top.appendChild(nm);
+    card.appendChild(top);
+    var r = remaining(sp), pct = num(sp.initial) > 0 ? Math.min(100, r / num(sp.initial) * 100) : 0;
+    var bar = el('div', 'sp-bar');
+    var fill = el('i');
+    fill.style.width = pct + '%';
+    fill.style.background = sp.colorHex || '#888';
+    bar.appendChild(fill);
+    card.appendChild(bar);
+    var line = el('div', 'sp-line');
+    line.appendChild(el('b', r < data.low ? 'low' : '', Math.round(r) + ' g'));
+    line.appendChild(document.createTextNode(' left of ' + Math.round(num(sp.initial)) + ' g'));
+    card.appendChild(line);
+    card.appendChild(el('div', 'sp-where' + (whereLoaded(sp.id) ? ' loaded' : ''), '\ud83d\udccd ' + whereIs(sp.id)));
+    var acts = el('div', 'sp-acts');
+    var bw = el('button', 'ghost', 'Weigh');
+    bw.addEventListener('click', function () { weighSpool(sp); });
+    var be = el('button', 'ghost', 'Edit');
+    be.addEventListener('click', function () { editSpool(sp); });
+    acts.appendChild(bw);
+    acts.appendChild(be);
+    card.appendChild(acts);
+    return card;
   }
 
   function renderHistory() {
@@ -947,6 +1055,7 @@
     $('libClose').addEventListener('click', close);
     $('addSpool').addEventListener('click', function () { catalogPicker({}, null); });
     $('showArchived').addEventListener('change', renderSpools);
+    $('spoolSearch').addEventListener('input', renderSpools);
     $('libBackup').addEventListener('click', backupDialog);
     $('libSettings').addEventListener('click', libSettings);
     Array.prototype.forEach.call(document.querySelectorAll('#library .tabs button'), function (b) {

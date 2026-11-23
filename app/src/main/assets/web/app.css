@@ -292,7 +292,14 @@ select { background: var(--card2); color: var(--text); border: 1px solid var(--l
 .libbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
 .libbar .primary { padding: 10px 18px; font-size: 16px; }
 label.check.small { font-size: 14px; margin: 0; color: var(--muted); }
-.spoollist { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.spoollist { display: block; }
+.spoolgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.grouphead { display: flex; align-items: center; gap: 10px; margin: 18px 2px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.grouphead:first-child { margin-top: 4px; }
+.grouphead b { font-size: 17px; }
+.grouphead span { color: var(--muted); font-size: 14px; }
+.grouphead i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3); }
+.spoolsearch { margin-left: auto; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; color: var(--text); padding: 9px 12px; font-size: 15px; min-width: 200px; }
 .spool { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .spool.archived { opacity: .5; }
 .sp-top { display: flex; gap: 10px; align-items: center; }

@@ -302,10 +302,12 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     private synchronized void startPrinters() {
         stopPrinters();
         try {
-            JSONArray list = new JSONObject(loadConfig()).optJSONArray("printers");
+            JSONObject root = new JSONObject(loadConfig());
+            JSONArray list = root.optJSONArray("printers");
             if (list == null) return;
             for (int i = 0; i < list.length(); i++) {
                 PrinterConnection.Config c = PrinterConnection.Config.fromJson(list.getJSONObject(i));
+                c.lightAuto = root.optBoolean("lightAuto", true);
                 PrinterConnection p = new PrinterConnection(i, c, this, getCacheDir());
                 printers.add(p);
                 p.start();

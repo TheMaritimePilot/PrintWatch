@@ -38,6 +38,8 @@ public final class PrinterConnection {
         public String serial = "";
         public String accessCode = "";
         public boolean camera = true;
+        /** Light on when a print starts; flash 5 times and off when it ends. */
+        public boolean lightAuto = true;
 
         public static Config fromJson(JSONObject o) {
             Config c = new Config();
@@ -69,6 +71,7 @@ public final class PrinterConnection {
     private String error = "";
     private String camStatus = "off";
     private String camError = "";
+    private String lastGcode = null; // to notice a print starting or ending
 
     private volatile byte[] latestFrame;
 
@@ -260,6 +263,34 @@ public final class PrinterConnection {
         return Math.round(clamp(percent, 0, 100) * 255 / 100f);
     }
 
+    private static boolean busy(String g) {
+        return "PREPARE".equals(g) || "RUNNING".equals(g) || "PAUSE".equals(g) || "SLICING".equals(g);
+    }
+
+    /** Chamber light automation: on when a print starts; 5 flashes and off when it ends. */
+    private void onJobChange(String before, String after) {
+        if (!cfg.lightAuto) return;
+        if (!busy(before) && ("PREPARE".equals(after) || "RUNNING".equals(after))) {
+            setChamberLight(true);
+        } else if (busy(before) && ("FINISH".equals(after) || "FAILED".equals(after))) {
+            Thread t = new Thread(() -> {
+                try {
+                    for (int i = 0; i < 5 && running; i++) {
+                        setChamberLight(false);
+                        Thread.sleep(600);
+                        setChamberLight(true);
+                        Thread.sleep(600);
+                    }
+                } catch (InterruptedException ignored) {
+                    // stopping: still switch the light off below
+                }
+                setChamberLight(false);
+            }, "light-" + index);
+            t.setDaemon(true);
+            t.start();
+        }
+    }
+
     /** Turn the chamber light on or off. */
     public void setChamberLight(boolean on) {
         send("{\"system\":{\"sequence_id\":\"" + seq() + "\",\"command\":\"ledctrl\",\"led_node\":\"chamber_light\","
@@ -338,9 +369,14 @@ public final class PrinterConnection {
             if (p == null) return;
             String cmd = p.optString("command", "push_status");
             if (!"push_status".equals(cmd)) return;
+            String before, after;
             synchronized (stateLock) {
+                before = lastGcode;
                 merge(print, p);
+                after = print.optString("gcode_state", "");
+                if (!after.isEmpty()) lastGcode = after;
             }
+            if (before != null && !after.isEmpty() && !after.equals(before)) onJobChange(before, after);
             maybeFetchModel();
             emit();
         } catch (JSONException ignored) {

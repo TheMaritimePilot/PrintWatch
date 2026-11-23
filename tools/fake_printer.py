@@ -16,6 +16,7 @@ ap.add_argument("--cert", required=True)
 ap.add_argument("--key", required=True)
 ap.add_argument("--host", default="127.0.0.1")
 ap.add_argument("--code", default="12345678")
+ap.add_argument("--speed", type=int, default=1, help="percent progress per second")
 ap.add_argument("--tls13", action="store_true", help="allow TLS 1.3 (default: max TLS 1.2)")
 ap.add_argument("--jpeg", default=None, help="JPEG file to stream as camera image")
 args = ap.parse_args()
@@ -89,8 +90,18 @@ def mqtt_client(conn):
         n = 0
         while alive[0]:
             time.sleep(1); n += 1
+            if state["gcode_state"] == "PREPARE":
+                state["gcode_state"] = "RUNNING"
+                try: mqtt_pub(s, lock, f"device/{SERIAL}/report", json.dumps({"print": {"command": "push_status", "gcode_state": "RUNNING"}}).encode())
+                except Exception: alive[0] = False
+                continue
+            if state["gcode_state"] == "RUNNING" and state["mc_percent"] >= 100:
+                state["gcode_state"] = "FINISH"
+                try: mqtt_pub(s, lock, f"device/{SERIAL}/report", json.dumps({"print": {"command": "push_status", "gcode_state": "FINISH"}}).encode())
+                except Exception: alive[0] = False
+                continue
             if state["gcode_state"] == "RUNNING":
-                state["mc_percent"] = min(100, state["mc_percent"] + 1)
+                state["mc_percent"] = min(100, state["mc_percent"] + args.speed)
                 state["layer_num"] += 1
                 delta = {"print": {"command": "push_status", "mc_percent": state["mc_percent"],
                                    "layer_num": state["layer_num"], "nozzle_temper": 219 + (n % 3) * 0.5}}

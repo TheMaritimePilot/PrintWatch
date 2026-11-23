@@ -7,7 +7,7 @@
   var REMOTE = !!window.PW_REMOTE; // the filament library opened from a computer's browser
   var DEMO = !N && !REMOTE;
   var DEFAULTS = { printers: [], dim: true, dimLevel: 8, sound: true, clock24: true, controls: true,
-    autoUpdate: true, updateToken: '', orientation: 'auto', webLibrary: false, amsStyle: 'real' };
+    autoUpdate: true, updateToken: '', orientation: 'auto', webLibrary: false, amsStyle: 'real', lightAuto: true };
 
   var STATUS = {
     IDLE: ['Idle', 'idle'], INIT: ['Starting', 'prep'], SLICING: ['Slicing', 'prep'],
@@ -653,6 +653,7 @@
     $('optAutoUpdate').checked = draft.autoUpdate !== false;
     $('optOrientation').value = draft.orientation || 'auto';
     $('optAmsStyle').value = draft.amsStyle || 'real';
+    $('optLightAuto').checked = draft.lightAuto !== false;
     $('optWebLibrary').checked = !!draft.webLibrary;
     showWebAddress();
     $('optToken').value = draft.updateToken || '';
@@ -729,6 +730,7 @@
     draft.autoUpdate = $('optAutoUpdate').checked;
     draft.orientation = $('optOrientation').value;
     draft.amsStyle = $('optAmsStyle').value;
+    draft.lightAuto = $('optLightAuto').checked;
     draft.webLibrary = $('optWebLibrary').checked;
     draft.updateToken = $('optToken').value.trim();
     cfg = draft;

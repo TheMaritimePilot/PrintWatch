@@ -922,6 +922,7 @@
     var s = demoStates[c.i];
     if (!s) return;
     var p = s.print;
+    if (action === 'filament') { (window.__pwSent = window.__pwSent || []).push({ printer: c.i, value: JSON.parse(value) }); return; }
     if (action === 'light') p.lights_report = [{ node: 'chamber_light', mode: value }];
     else if (action === 'pause') p.gcode_state = 'PAUSE';
     else if (action === 'resume') p.gcode_state = 'RUNNING';
@@ -969,6 +970,7 @@
   window.PWFil.init({
     N: N, DEMO: DEMO, REMOTE: REMOTE, el: el, num: num, colorOf: colorOf, fmtClock: fmtClock,
     dialog: dialog, closeDialog: closeDialog, confirmDialog: confirmDialog,
+    command: command,
     cards: function () { return cards; },
     rerender: function () { cards.forEach(function (c) { c.amsKey = ''; render(c); }); }
   });

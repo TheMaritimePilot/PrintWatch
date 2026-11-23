@@ -142,7 +142,42 @@ public final class PrinterConnection {
             case "fan_part": gcode("M106 P1 S" + fanPwm(value)); break;
             case "fan_aux": gcode("M106 P2 S" + fanPwm(value)); break;
             case "fan_chamber": gcode("M106 P3 S" + fanPwm(value)); break;
+            case "filament": setFilament(value); break;
             default: break;
+        }
+    }
+
+    /**
+     * Tells the printer which filament is in a slot (what Bambu Studio does when you edit a slot).
+     * value: {"ams":0..3 or 255, "tray":0..3 or 254, "type":"PETG", "color":"RRGGBB", "idx":"GFG99", "min":220, "max":260}
+     */
+    private void setFilament(String value) {
+        try {
+            JSONObject v = new JSONObject(value);
+            int ams = v.getInt("ams"), tray = v.getInt("tray");
+            boolean external = ams == 255 && tray == 254;
+            if (!external && (ams < 0 || ams > 3 || tray < 0 || tray > 3)) return;
+            String color = v.optString("color", "FFFFFF").replaceAll("[^0-9A-Fa-f]", "").toUpperCase();
+            if (color.length() == 6) color += "FF";
+            if (color.length() != 8) color = "FFFFFFFF";
+            String type = v.optString("type", "PLA").replaceAll("[^A-Za-z0-9+ -]", "");
+            if (type.isEmpty()) type = "PLA";
+            String idx = v.optString("idx", "GFL99").replaceAll("[^A-Za-z0-9]", "");
+            int min = Math.max(0, Math.min(350, v.optInt("min", 190)));
+            int max = Math.max(min, Math.min(350, v.optInt("max", 230)));
+            JSONObject p = new JSONObject();
+            p.put("sequence_id", seq());
+            p.put("command", "ams_filament_setting");
+            p.put("ams_id", ams);
+            p.put("tray_id", tray);
+            p.put("tray_info_idx", idx);
+            p.put("tray_color", color);
+            p.put("nozzle_temp_min", min);
+            p.put("nozzle_temp_max", max);
+            p.put("tray_type", type);
+            send(new JSONObject().put("print", p).toString());
+        } catch (JSONException ignored) {
+            // malformed request from the page: ignore
         }
     }
 
@@ -267,8 +302,8 @@ public final class PrinterConnection {
                 merge((JSONObject) old, (JSONObject) v);
             } else if (v instanceof JSONArray && old instanceof JSONArray && isIdArray((JSONArray) v)
                     && isIdArray((JSONArray) old)) {
+                // Update items by id; items the update doesn't mention are kept (partial updates).
                 JSONArray a = (JSONArray) old, b = (JSONArray) v;
-                JSONArray result = new JSONArray();
                 for (int i = 0; i < b.length(); i++) {
                     JSONObject nb = b.getJSONObject(i);
                     JSONObject match = null;
@@ -276,14 +311,8 @@ public final class PrinterConnection {
                         JSONObject oa = a.getJSONObject(j);
                         if (oa.optString("id").equals(nb.optString("id"))) { match = oa; break; }
                     }
-                    if (match != null) {
-                        merge(match, nb);
-                        result.put(match);
-                    } else {
-                        result.put(nb);
-                    }
+                    if (match != null) merge(match, nb); else a.put(nb);
                 }
-                target.put(k, result);
             } else {
                 target.put(k, v);
             }

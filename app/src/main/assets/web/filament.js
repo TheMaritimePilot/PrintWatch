@@ -84,10 +84,48 @@
     return whereLoaded(id) || (sp && sp.place) || 'Shelf';
   }
 
+  // Printer filament presets (Bambu "Generic" profiles) and nozzle temperature ranges per material.
+  var PRESETS = [
+    [/^PLA.*CF|^PLA-CF/, 'GFL98', 210, 240], [/^PLA/, 'GFL99', 190, 230], [/^PETG.*CF|^PETG-CF/, 'GFG98', 240, 270],
+    [/^PETG|^PET/, 'GFG99', 220, 260], [/^ABS/, 'GFB99', 240, 270], [/^ASA/, 'GFB98', 240, 270], [/^TPU/, 'GFU99', 200, 240],
+    [/^PC/, 'GFC99', 260, 280], [/^PA|^NYLON/, 'GFN99', 260, 290], [/^PVA/, 'GFS99', 190, 210], [/^HIPS/, 'GFS98', 220, 250]
+  ];
+  function presetFor(material) {
+    var m = String(material || 'PLA').toUpperCase().replace(/\s+/g, ' ');
+    for (var i = 0; i < PRESETS.length; i++) if (PRESETS[i][0].test(m)) return PRESETS[i];
+    return [null, 'GFL99', 190, 230];
+  }
+  function baseType(material) {
+    var m = String(material || 'PLA').toUpperCase();
+    var known = ['PLA-CF', 'PETG-CF', 'PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PC', 'PA', 'PVA', 'HIPS'];
+    for (var i = 0; i < known.length; i++) if (m.indexOf(known[i]) === 0) return known[i];
+    return m.split(/[ +]/)[0] || 'PLA';
+  }
+
+  /** Tells the printer which filament is now in a slot, so Bambu Studio and its screen agree. */
+  function pushToPrinter(printer, slot, sp) {
+    if (!sp || data.syncPrinter === false || core.REMOTE) return;
+    var card = null;
+    core.cards().forEach(function (c) { if (printerKey(c) === printer) card = c; });
+    if (!card) return;
+    slot = num(slot, -1);
+    var ams = slot === 254 ? 255 : Math.floor(slot / 4), tray = slot === 254 ? 254 : slot % 4;
+    if (slot < 0 || (slot > 15 && slot !== 254)) return;
+    // an RFID spool is set by the AMS itself
+    var p = card.state && card.state.print;
+    if (p && trays(p).some(function (t) { return t.slot === slot && t.rfid; })) return;
+    var preset = presetFor(sp.material);
+    core.command(card, 'filament', JSON.stringify({
+      ams: ams, tray: tray, type: baseType(sp.material), color: String(sp.colorHex || '#ffffff').replace('#', ''),
+      idx: preset[1], min: preset[2], max: preset[3]
+    }));
+  }
+
   function assign(c, slot, id) {
     // a physical spool can only be in one place
     Object.keys(data.slots).forEach(function (k) { if (data.slots[k] === id) delete data.slots[k]; });
     if (id) data.slots[slotKey(c, slot)] = id; else delete data.slots[slotKey(c, slot)];
+    if (id) pushToPrinter(printerKey(c), slot, spool(id));
     save();
     core.rerender();
   }
@@ -513,6 +551,7 @@
       Object.keys(data.slots).forEach(function (k) { if (data.slots[k] === op.id) delete data.slots[k]; });
     } else if (op.type === 'settings') {
       if (Array.isArray(op.places)) data.places = op.places;
+      if (op.syncPrinter != null) data.syncPrinter = !!op.syncPrinter;
       if (op.low != null) data.low = num(op.low, 150);
       if (op.currency != null) data.currency = String(op.currency).slice(0, 3);
     } else if (op.type === 'replace' && op.data && Array.isArray(op.data.spools)) {
@@ -530,6 +569,8 @@
       if (previous && previous.id !== sp.id) previous.place = 'Shelf';
       data.slots[key] = sp.id;
       delete sp.place;
+      var cut = key.lastIndexOf(':');
+      pushToPrinter(key.slice(0, cut), key.slice(cut + 1), sp);
     } else {
       sp.place = loc.slice(6) || 'Shelf';
     }
@@ -1006,6 +1047,13 @@
     var cur = input('text', data.currency || '', { placeholder: 'e.g. € or $', maxlength: 3 });
     form.appendChild(field('Warn when a spool has less than (g)', low));
     form.appendChild(field('Currency symbol for prices', cur));
+    var syncL = el('label', 'check full');
+    var sync = input('checkbox');
+    sync.checked = data.syncPrinter !== false;
+    syncL.appendChild(sync);
+    syncL.appendChild(document.createTextNode(' When I put a spool in a printer slot, also set its material and colour on the printer ' +
+      '(needs Developer Mode on the printer)'));
+    form.appendChild(syncL);
     var pl = input('text', places().join(', '), { placeholder: 'Shelf, Dry box, Drawer' });
     var plF = field('Your own places, separated by commas (besides the printers)', pl);
     plF.classList.add('full');
@@ -1013,7 +1061,7 @@
     core.dialog('Filament settings', form, [{ label: 'Cancel' }, {
       label: 'Save', cls: 'primary', fn: function () {
         var list = pl.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-        commit({ type: 'settings', low: Math.max(0, num(low.value, 150)), currency: cur.value.trim(), places: list });
+        commit({ type: 'settings', low: Math.max(0, num(low.value, 150)), currency: cur.value.trim(), places: list, syncPrinter: sync.checked });
       }
     }], true);
   }

@@ -135,6 +135,16 @@ def handle_command(msg, s, lock):
     elif cmd == "stop": delta.update(gcode_state="FAILED", print_error=50348044)
     elif cmd == "print_speed": delta["spd_lvl"] = int(p["param"])
     elif cmd == "ledctrl": delta["lights_report"] = [{"node": "chamber_light", "mode": sysm["led_mode"]}]
+    elif cmd == "ams_filament_setting":
+        info = {"tray_type": p["tray_type"], "tray_color": p["tray_color"], "tray_info_idx": p["tray_info_idx"],
+                "nozzle_temp_min": str(p["nozzle_temp_min"]), "nozzle_temp_max": str(p["nozzle_temp_max"])}
+        if p["ams_id"] == 255:
+            state.setdefault("vt_tray", {"id": "254"}).update(info)
+            delta["vt_tray"] = state["vt_tray"]
+        else:
+            unit = state["ams"]["ams"][p["ams_id"]]
+            unit["tray"][p["tray_id"]].update(info)
+            delta["ams"] = {"ams": [{"id": unit["id"], "tray": [dict(unit["tray"][p["tray_id"]])]}]}
     elif cmd == "gcode_line":
         g = p["param"].strip().split()
         if g[0] == "M104": delta["nozzle_target_temper"] = int(g[1][1:])

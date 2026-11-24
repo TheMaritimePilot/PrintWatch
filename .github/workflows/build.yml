@@ -3,6 +3,9 @@ name: Build APK
 on:
   push:
     branches: [main]
+    paths-ignore:            # printable extras and docs don't need a new app release
+      - 'extras/**'
+      - '**.md'
   workflow_dispatch:
 
 permissions:

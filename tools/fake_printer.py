@@ -16,6 +16,7 @@ ap.add_argument("--cert", required=True)
 ap.add_argument("--key", required=True)
 ap.add_argument("--host", default="127.0.0.1")
 ap.add_argument("--code", default="12345678")
+ap.add_argument("--no-ams", action="store_true", help="printer with only the external spool")
 ap.add_argument("--speed", type=int, default=1, help="percent progress per second")
 ap.add_argument("--tls13", action="store_true", help="allow TLS 1.3 (default: max TLS 1.2)")
 ap.add_argument("--jpeg", default=None, help="JPEG file to stream as camera image")
@@ -37,6 +38,9 @@ state = {
         {"id": "1", "tray_type": "PETG", "tray_color": "888888FF", "remain": 40},
         {"id": "2"}, {"id": "3", "tray_type": "PETG", "tray_color": "1E4FD8FF", "remain": 15}]}]},
 }
+if args.no_ams:
+    state.pop("ams")
+    state["vt_tray"] = {"id": "254", "tray_type": "PLA", "tray_color": "00AE42FF"}
 commands = []
 
 def log(*a): print("[fake]", *a, flush=True)

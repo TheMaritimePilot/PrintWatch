@@ -95,6 +95,19 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
                 String op = new JSONObject(json).toString(); // validated and re-encoded: safe to pass to the page
                 return callJs("PWFil.remoteOp(" + op + ")");
             }
+            @Override public String state() throws Exception { return sharedState(); }
+            @Override public byte[] camera(int i) { PrinterConnection p = printer(i); return p == null ? null : p.latestFrame(); }
+            @Override public byte[] model(int i) { PrinterConnection p = printer(i); return p == null ? null : p.modelImage(); }
+            @Override public void command(int i, String action, String value) {
+                PrinterConnection p = printer(i);
+                if (p != null) {
+                    Updater.log(MainActivity.this, "Remote control: " + action + " " + value + " on printer " + (i + 1));
+                    p.command(action, value);
+                }
+            }
+            @Override public boolean shareLibrary() { return config().optBoolean("webLibrary", false); }
+            @Override public boolean shareDashboard() { return config().optBoolean("webDashboard", false); }
+            @Override public String pin() { return config().optString("webPin", "").trim(); }
         });
         updateLibraryServer();
         Updater.handleInstallStatus(this, getIntent());
@@ -193,7 +206,37 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     }
 
     private void updateLibraryServer() {
-        if (config().optBoolean("webLibrary", false)) libraryServer.start(); else libraryServer.stop();
+        JSONObject c = config();
+        if (c.optBoolean("webLibrary", false) || c.optBoolean("webDashboard", false)) libraryServer.start();
+        else libraryServer.stop();
+    }
+
+    // Latest status of every printer, for phones and computers (see LibraryServer).
+    private final Map<Integer, String> latestState = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Names, display settings and status of the printers; never addresses or access codes. */
+    private String sharedState() throws Exception {
+        JSONObject c = config();
+        JSONArray list = c.optJSONArray("printers");
+        JSONArray printers = new JSONArray(), states = new JSONArray();
+        for (int i = 0; list != null && i < list.length(); i++) {
+            JSONObject p = list.getJSONObject(i);
+            JSONObject pub = new JSONObject();
+            pub.put("name", p.optString("name", "Printer " + (i + 1)));
+            pub.put("serial", p.optString("serial", ""));   // only used to look up spools in the library
+            pub.put("camera", p.optBoolean("camera", true));
+            printers.put(pub);
+            String st = latestState.get(i);
+            states.put(st == null ? JSONObject.NULL : new JSONObject(st));
+        }
+        JSONObject o = new JSONObject();
+        o.put("printers", printers);
+        o.put("states", states);
+        o.put("controls", !c.optString("webPin", "").trim().isEmpty());
+        o.put("library", c.optBoolean("webLibrary", false));
+        o.put("clock24", c.optBoolean("clock24", true));
+        o.put("amsStyle", c.optString("amsStyle", "real"));
+        return o.toString();
     }
 
     private byte[] readAsset(String path) throws IOException {
@@ -318,6 +361,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     }
 
     private synchronized void stopPrinters() {
+        latestState.clear();
         for (PrinterConnection p : printers) p.stop();
         printers.clear();
     }
@@ -329,6 +373,7 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
     // Updates arrive on background threads; batch them onto the UI thread.
     @Override
     public void onState(int index, String json) {
+        latestState.put(index, json);
         synchronized (pendingState) {
             pendingState.put(index, json);
             scheduleFlush();
@@ -545,7 +590,9 @@ public class MainActivity extends Activity implements PrinterConnection.Callback
         /** The address computers use for the filament library, or "" when it is off. */
         @JavascriptInterface
         public String webAddress() {
-            return libraryServer != null && libraryServer.running() ? LibraryServer.address() : "";
+            if (libraryServer == null || !libraryServer.running()) return "";
+            java.util.List<String> all = LibraryServer.addresses();
+            return all.isEmpty() ? "" : android.text.TextUtils.join(" \u00b7 ", all);
         }
 
         @JavascriptInterface

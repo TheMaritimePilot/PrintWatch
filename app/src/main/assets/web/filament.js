@@ -22,7 +22,7 @@
   // ------------------------------------------------------------- storage
 
   function load() {
-    if (core.REMOTE) { data = {}; load2(); return; }
+    if (core.REMOTE || core.VIEWER) { data = {}; load2(); return; }
     var raw = null;
     try { raw = core.DEMO ? localStorage.getItem('pw-filament') : core.N.loadData('filament'); } catch (e) { raw = null; }
     try { data = raw ? JSON.parse(raw) : null; } catch (e) { data = null; }
@@ -108,7 +108,7 @@
 
   /** Tells the printer which filament is now in a slot, so Bambu Studio and its screen agree. */
   function pushToPrinter(printer, slot, sp) {
-    if (!sp || data.syncPrinter === false || core.REMOTE) return;
+    if (!sp || data.syncPrinter === false || core.REMOTE || core.VIEWER) return;
     var card = null;
     core.cards().forEach(function (c) { if (printerKey(c) === printer) card = c; });
     if (!card) return;
@@ -187,6 +187,7 @@
 
   /** Called with every printer update. Links RFID spools and books filament usage after a print. */
   function track(c, s) {
+    if (core.VIEWER) return; // only the tablet books filament use
     if (!s || s.status !== 'online' || !s.print) return;
     var p = s.print;
     var changed = false;
@@ -1112,7 +1113,7 @@
   function init(c) {
     core = c;
     load();
-    $('openLibrary').addEventListener('click', open);
+    if (!core.VIEWER) $('openLibrary').addEventListener('click', open);
     $('libClose').addEventListener('click', close);
     $('addSpool').addEventListener('click', function () { catalogPicker({}, null); });
     $('showArchived').addEventListener('change', renderSpools);
@@ -1122,6 +1123,16 @@
     Array.prototype.forEach.call(document.querySelectorAll('#library .tabs button'), function (b) {
       b.addEventListener('click', function () { tab = b.getAttribute('data-tab'); renderLibrary(); });
     });
+    if (core.VIEWER) {
+      // read-only copy of the library for the spool names and grams on the AMS picture
+      var refresh = function () {
+        fetch('/api/library', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (res) { if (res) { data = res.data || {}; load2(); ver++; core.rerender(); } }).catch(function () {});
+      };
+      refresh();
+      setInterval(refresh, 30000);
+      $('openLibrary').addEventListener('click', function () { location.href = '/library'; });
+    }
     if (core.REMOTE) {
       open();
       remoteRefresh();

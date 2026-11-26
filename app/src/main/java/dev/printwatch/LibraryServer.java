@@ -15,10 +15,12 @@ import java.util.Collections;
 import java.util.Locale;
 
 /**
- * A tiny web server on the home network (port 8080) so the filament library can be edited from a
- * computer's browser. It serves the same page in "remote" mode; reads and changes are handed to the
- * dashboard running on the tablet, which stays the only place the library is changed.
- * Only accepts connections from private (home network) addresses.
+ * A tiny web server (port 8080) for phones and computers:
+ *   /         the dashboard (cameras, progress, AMS), when sharing the dashboard is switched on
+ *   /library  the filament library, when sharing the library is switched on
+ * Reads and changes go through the tablet, which stays the only place that talks to the printers
+ * and changes the library. Printer controls need the PIN set on the tablet.
+ * Only accepts connections from the home network and from Tailscale (100.64.0.0/10, fd7a:115c:a1e0::/48).
  */
 final class LibraryServer {
 
@@ -31,7 +33,23 @@ final class LibraryServer {
         String getLibrary() throws Exception;
         /** POST /api/op: applies one change on the tablet; returns JSON. */
         String applyOp(String json) throws Exception;
+        /** GET /api/state: printer names and their latest status (no addresses or access codes). */
+        String state() throws Exception;
+        /** Latest camera picture / job preview of a printer, or null. */
+        byte[] camera(int index);
+        byte[] model(int index);
+        /** Runs a printer control (already checked against the PIN). */
+        void command(int index, String action, String value);
+        boolean shareLibrary();
+        boolean shareDashboard();
+        /** PIN for printer controls; empty means controls are not allowed from other devices. */
+        String pin();
     }
+
+    private static final java.util.Set<String> REMOTE_ACTIONS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "light", "pause", "resume", "stop", "speed", "nozzle", "bed", "fan_part", "fan_aux", "fan_chamber"));
+    private int badPins;
+    private long lockedUntil;
 
     private final Handler handler;
     private volatile ServerSocket server;
@@ -71,6 +89,23 @@ final class LibraryServer {
 
     boolean running() { return server != null; }
 
+    /** All addresses to reach the tablet: home network first, then Tailscale (100.x). */
+    static java.util.List<String> addresses() {
+        java.util.List<String> home = new java.util.ArrayList<>(), vpn = new java.util.ArrayList<>();
+        try {
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (InetAddress a : Collections.list(ni.getInetAddresses())) {
+                    if (!(a instanceof Inet4Address)) continue;
+                    String url = "http://" + a.getHostAddress() + ":" + PORT;
+                    if (a.isSiteLocalAddress()) home.add(url); else if (allowed(a) && !a.isLinkLocalAddress()) vpn.add(url);
+                }
+            }
+        } catch (Exception ignored) { }
+        home.addAll(vpn);
+        return home;
+    }
+
     /** e.g. "http://192.168.1.23:8080", or "" when the tablet has no network address. */
     static String address() {
         try {
@@ -102,7 +137,7 @@ final class LibraryServer {
     private void handle(Socket c) {
         try (Socket sock = c) {
             InetAddress from = sock.getInetAddress();
-            if (!(from.isSiteLocalAddress() || from.isLoopbackAddress() || from.isLinkLocalAddress())) return;
+            if (!allowed(from)) return;
             sock.setSoTimeout(15000);
             InputStream in = new BufferedInputStream(sock.getInputStream());
             String requestLine = readLine(in);
@@ -135,26 +170,52 @@ final class LibraryServer {
         }
     }
 
+    /** Home network (private ranges), Tailscale, link-local and the tablet itself. */
+    static boolean allowed(InetAddress a) {
+        if (a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress()) return true;
+        byte[] b = a.getAddress();
+        if (b.length == 4) return (b[0] & 0xFF) == 100 && (b[1] & 0xC0) == 64;      // 100.64.0.0/10
+        return b.length == 16 && (b[0] & 0xFE) == 0xFC;                             // fc00::/7 (incl. Tailscale)
+    }
+
     private void route(Socket sock, String method, String path, String body) throws IOException {
         try {
-            if (method.equals("GET") && path.equals("/api/library")) {
+            boolean dash = handler.shareDashboard(), lib = handler.shareLibrary();
+            if (method.equals("GET") && path.equals("/api/library") && (lib || dash)) {
                 respond(sock, 200, "application/json", bytes(handler.getLibrary()));
-            } else if (method.equals("POST") && path.equals("/api/op")) {
+            } else if (method.equals("POST") && path.equals("/api/op") && lib) {
                 respond(sock, 200, "application/json", bytes(handler.applyOp(body)));
+            } else if (method.equals("GET") && path.equals("/api/state") && dash) {
+                respond(sock, 200, "application/json", bytes(handler.state()));
+            } else if (method.equals("POST") && path.equals("/api/command") && dash) {
+                respond(sock, 200, "application/json", bytes(remoteCommand(body)));
+            } else if (method.equals("GET") && dash && (path.startsWith("/cam/") || path.startsWith("/model/"))) {
+                int idx = -1;
+                try { idx = Integer.parseInt(path.replaceAll("^/(cam|model)/(\\d+)\\..*$", "$2")); } catch (NumberFormatException ignored) { }
+                byte[] img = path.startsWith("/cam/") ? handler.camera(idx) : handler.model(idx);
+                if (img == null) respond(sock, 404, "text/plain", bytes("No picture"));
+                else respond(sock, 200, path.startsWith("/cam/") ? "image/jpeg" : "image/png", img);
             } else if (method.equals("GET")) {
-                if (path.equals("/")) path = "/index.html";
+                String flag = null;
+                if (path.equals("/") && dash) flag = "window.PW_REMOTE_DASH=true";
+                else if (path.equals("/") || path.equals("/library")) flag = lib ? "window.PW_REMOTE=true" : null;
+                if (path.equals("/") || path.equals("/library")) {
+                    if (flag == null) {
+                        respond(sock, 404, "text/html", bytes("<p style='font:18px sans-serif'>Sharing is switched off in PrintWatch on the tablet.</p>"));
+                        return;
+                    }
+                    String html = new String(handler.asset("index.html"), StandardCharsets.UTF_8)
+                            .replace("<script src=\"filament.js\">", "<script>" + flag + "</script><script src=\"filament.js\">");
+                    respond(sock, 200, "text/html", bytes(html));
+                    return;
+                }
                 String name = path.substring(1);
-                if (name.contains("..") || name.contains("/") || name.startsWith("data-")) {
+                if (name.contains("..") || name.contains("/") || name.startsWith("data-") || name.equals("index.html")) {
                     respond(sock, 404, "text/plain", bytes("Not found"));
                     return;
                 }
                 byte[] data = handler.asset(name);
                 if (data == null) { respond(sock, 404, "text/plain", bytes("Not found")); return; }
-                if (name.equals("index.html")) {
-                    String html = new String(data, StandardCharsets.UTF_8)
-                            .replace("<script src=\"filament.js\">", "<script>window.PW_REMOTE=true</script><script src=\"filament.js\">");
-                    data = bytes(html);
-                }
                 respond(sock, 200, mime(name), data);
             } else {
                 respond(sock, 405, "text/plain", bytes("Method not allowed"));
@@ -163,6 +224,25 @@ final class LibraryServer {
             throw e;
         } catch (Exception e) {
             respond(sock, 503, "text/plain", bytes("PrintWatch on the tablet is not ready: " + e.getMessage()));
+        }
+    }
+
+    /** {"pin":"1234","index":0,"action":"light","value":"on"} */
+    private String remoteCommand(String body) throws Exception {
+        String pin = handler.pin();
+        if (pin == null || pin.isEmpty()) return "{\"ok\":false,\"error\":\"Controls from other devices are switched off on the tablet\"}";
+        synchronized (this) {
+            if (System.currentTimeMillis() < lockedUntil) return "{\"ok\":false,\"error\":\"Too many wrong PINs, try again in a few minutes\"}";
+            org.json.JSONObject j = new org.json.JSONObject(body);
+            if (!pin.equals(j.optString("pin"))) {
+                if (++badPins >= 5) { lockedUntil = System.currentTimeMillis() + 5 * 60000; badPins = 0; }
+                return "{\"ok\":false,\"error\":\"Wrong PIN\",\"badPin\":true}";
+            }
+            badPins = 0;
+            String action = j.optString("action");
+            if (!REMOTE_ACTIONS.contains(action)) return "{\"ok\":false,\"error\":\"Not allowed\"}";
+            handler.command(j.optInt("index", -1), action, j.optString("value", ""));
+            return "{\"ok\":true}";
         }
     }
 

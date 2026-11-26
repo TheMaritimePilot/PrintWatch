@@ -435,3 +435,33 @@ html:has(body.remote) { overflow: auto; height: auto; }
 .sdfile label.check { margin: 4px 0; }
 .sdopts { display: flex; flex-wrap: wrap; gap: 4px 22px; }
 .sdfacts b { color: var(--text); }
+
+/* the dashboard on a phone or computer */
+body.viewer #openSettings, body.viewer .cbtn.files { display: none !important; }
+body.viewer .controls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+html.viewer, html.viewer body.viewer { overflow: visible; height: auto; min-height: 0; }
+body.viewer { display: block; }
+body.viewer .grid { grid-auto-rows: auto; flex: none; }
+body.viewer .cam { flex: none; aspect-ratio: 16 / 9; min-height: 0; }
+body.viewer .amssvg { height: clamp(110px, 30vw, 200px); }
+@media (max-width: 820px) {
+  body.viewer .grid { grid-template-columns: 1fr !important; padding: 8px; gap: 10px; }
+  body.viewer .topbar { padding: 6px 10px 0; }
+  body.viewer #date { display: none; }
+  body.viewer .summary { font-size: 13px; }
+  body.viewer .name { font-size: 19px; }
+  body.viewer .pct { font-size: 36px; }
+  body.viewer .remain { font-size: 18px; }
+  body.viewer .stats { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 8px 8px 0; }
+  body.viewer .stat { padding: 6px 5px; }
+  body.viewer .stat .k { font-size: 10px; }
+  body.viewer .stat .v { font-size: 14px; }
+  body.viewer .stat .v small { display: none; }
+  body.viewer .controls { padding: 6px 8px 0; }
+  body.viewer .cbtn { height: 40px; font-size: 12px; }
+  body.viewer .cbtn.speed span { display: none; }
+  body.viewer .cam { margin: 0 8px; }
+  body.viewer .progress { padding: 8px 12px 4px; }
+  body.viewer .libbtn span { display: none; }
+}
+.pininput { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 9px 12px; font-size: 17px; width: 160px; }

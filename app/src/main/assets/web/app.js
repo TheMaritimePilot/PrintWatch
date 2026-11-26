@@ -5,9 +5,10 @@
 
   var N = window.Native || null;
   var REMOTE = !!window.PW_REMOTE; // the filament library opened from a computer's browser
-  var DEMO = !N && !REMOTE;
+  var VIEWER = !!window.PW_REMOTE_DASH; // the dashboard opened on a phone or computer
+  var DEMO = !N && !REMOTE && !VIEWER;
   var DEFAULTS = { printers: [], dim: true, dimLevel: 8, sound: true, clock24: true, controls: true,
-    autoUpdate: true, updateToken: '', orientation: 'auto', webLibrary: false, amsStyle: 'real', lightAuto: true };
+    autoUpdate: true, updateToken: '', orientation: 'auto', webLibrary: false, webDashboard: false, webPin: '', amsStyle: 'real', lightAuto: true };
 
   var STATUS = {
     IDLE: ['Idle', 'idle'], INIT: ['Starting', 'prep'], SLICING: ['Slicing', 'prep'],
@@ -54,7 +55,7 @@
   function loadConfig() {
     var c = null;
     try {
-      c = REMOTE ? {} : JSON.parse(DEMO ? (localStorage.getItem('pw-config') || 'null') : N.getConfig());
+      c = REMOTE || VIEWER ? {} : JSON.parse(DEMO ? (localStorage.getItem('pw-config') || 'null') : N.getConfig());
     } catch (e) { c = null; }
     if (!c && DEMO) c = demoConfig();
     c = c || {};
@@ -514,12 +515,13 @@
 
   function command(c, action, value) {
     if (DEMO) { demoCommand(c, action, value); return; }
+    if (VIEWER) { viewerCommand(c, action, value); return; }
     N.command(c.i, action, value == null ? '' : String(value));
   }
 
   function onCardClick(c, e) {
     var tr = e.target.closest('[data-tray]');
-    if (tr) { window.PWFil.pickSpool(c, tr.getAttribute('data-tray')); return; }
+    if (tr) { if (!VIEWER) window.PWFil.pickSpool(c, tr.getAttribute('data-tray')); return; }
     var t = e.target.closest('[data-act],[data-set],.cam');
     if (!t || !c.state || c.state.status !== 'online') {
       if (t && t.classList.contains('cam') && c.cam.classList.contains('live')) openViewer(c);
@@ -655,6 +657,8 @@
     $('optAmsStyle').value = draft.amsStyle || 'real';
     $('optLightAuto').checked = draft.lightAuto !== false;
     $('optWebLibrary').checked = !!draft.webLibrary;
+    $('optWebDashboard').checked = !!draft.webDashboard;
+    $('optWebPin').value = draft.webPin || '';
     showWebAddress();
     $('optToken').value = draft.updateToken || '';
     onUpdate(N ? JSON.parse(N.updateStatus()) : { state: 'idle', message: '' });
@@ -732,6 +736,8 @@
     draft.amsStyle = $('optAmsStyle').value;
     draft.lightAuto = $('optLightAuto').checked;
     draft.webLibrary = $('optWebLibrary').checked;
+    draft.webDashboard = $('optWebDashboard').checked;
+    draft.webPin = $('optWebPin').value.trim();
     draft.updateToken = $('optToken').value.trim();
     cfg = draft;
     saveConfig();
@@ -745,15 +751,17 @@
   $('cancelSettings').addEventListener('click', function () { $('settings').classList.add('hidden'); });
   $('settingsBack').addEventListener('click', function () { $('settings').classList.add('hidden'); });
   $('saveTop').addEventListener('click', function () { $('saveSettings').click(); });
-  $('openSettings').addEventListener('click', openSettings);
+  $('openSettings').addEventListener('click', function () { if (!VIEWER) openSettings(); });
   $('welcomeSetup').addEventListener('click', openSettings);
   $('androidSettings').addEventListener('click', function () { if (N) N.openAndroidSettings(); });
   $('homeSettings').addEventListener('click', function () { if (N) N.openHomeSettings(); });
 
   function showWebAddress() {
     var addr = N ? N.webAddress() : '';
-    $('webAddress').textContent = addr ? 'On your computer, open: ' + addr :
-      ($('optWebLibrary').checked ? 'Starts when you tap Save.' : '');
+    var on = $('optWebLibrary').checked || $('optWebDashboard').checked;
+    $('webAddress').textContent = addr ? 'Open on your phone or computer: ' + addr +
+      ($('optWebDashboard').checked && $('optWebLibrary').checked ? '   (library: add /library)' : '') :
+      (on ? 'Starts when you tap Save all.' : '');
   }
 
   // ---------------------------------------------------------------- updates
@@ -977,12 +985,106 @@
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
 
+
+  // ------------------------------------------- viewer: phone / computer
+
+  var viewerPin = null;
+  try { viewerPin = localStorage.getItem('pw-pin'); } catch (e) { viewerPin = null; }
+  var lastStates = [];
+  var viewerOk = true;
+
+  function viewerStart() {
+    document.body.classList.add('viewer');
+    document.documentElement.classList.add('viewer'); // let the page scroll on a phone
+    $('summary').textContent = 'Connecting to the tablet…';
+    viewerPoll(true);
+    setInterval(function () { if (!document.hidden) viewerPoll(false); }, 2000);
+    setInterval(function () { if (!document.hidden) viewerFrames(); }, 2000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) { viewerPoll(false); viewerFrames(); } });
+  }
+
+  function viewerPoll(first) {
+    fetch('/api/state', { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (res) {
+        var names = JSON.stringify(res.printers);
+        if (first || names !== cfg._names || res.controls !== cfg.controls) {
+          cfg._names = names;
+          cfg.printers = res.printers || [];
+          cfg.controls = !!res.controls;
+          cfg.clock24 = res.clock24 !== false;
+          cfg.amsStyle = res.amsStyle || 'real';
+          lastStates = [];
+          buildGrid();
+          $('openLibrary').classList.toggle('hidden', !res.library);
+        }
+        (res.states || []).forEach(function (st, i) {
+          if (!st) return;
+          var key = JSON.stringify(st);
+          if (key === lastStates[i]) return;
+          lastStates[i] = key;
+          onState(i, st);
+        });
+        if (!viewerOk || first) { viewerOk = true; updateSummary(); }
+        if (first) viewerFrames();
+      })
+      .catch(function () {
+        viewerOk = false;
+        $('summary').textContent = '⚠ No contact with PrintWatch on the tablet';
+      });
+  }
+
+  function viewerFrames() {
+    cards.forEach(function (c) {
+      var s = c.state;
+      if (c.cfg.camera !== false && s && s.camera === 'online') onFrame(c.i);
+    });
+  }
+
+  function viewerCommand(c, action, value) {
+    if (!viewerPin) { askPin(function () { viewerCommand(c, action, value); }); return; }
+    fetch('/api/command', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: viewerPin, index: c.i, action: action, value: value == null ? '' : String(value) })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.ok) { setTimeout(function () { viewerPoll(false); }, 800); return; }
+      if (res.badPin) {
+        viewerPin = null;
+        try { localStorage.removeItem('pw-pin'); } catch (e) { /* ignore */ }
+        askPin(function () { viewerCommand(c, action, value); }, 'Wrong PIN, try again.');
+        return;
+      }
+      dialog('Not done', res.error || 'The tablet refused this.', [{ label: 'OK' }]);
+    }).catch(function () {
+      dialog('No contact', 'PrintWatch on the tablet did not answer.', [{ label: 'OK' }]);
+    });
+  }
+
+  function askPin(then, note) {
+    var box = el('div');
+    box.appendChild(el('p', 'hint', note || 'Enter the PIN set in PrintWatch on the tablet (Settings, Sharing).'));
+    var inp = el('input', 'bignum');
+    inp.type = 'password';
+    inp.inputMode = 'numeric';
+    inp.autocomplete = 'off';
+    box.appendChild(inp);
+    dialog('PIN for printer controls', box, [{ label: 'Cancel' }, {
+      label: 'OK', cls: 'primary', fn: function () {
+        viewerPin = inp.value.trim();
+        if (!viewerPin) return;
+        try { localStorage.setItem('pw-pin', viewerPin); } catch (e) { /* ignore */ }
+        then();
+      }
+    }]);
+    setTimeout(function () { inp.focus(); }, 50);
+  }
+
   // ------------------------------------------------------------------ start
 
   cfg = loadConfig();
   if (REMOTE) document.body.classList.add('remote');
   window.PWFil.init({
-    N: N, DEMO: DEMO, REMOTE: REMOTE, el: el, num: num, colorOf: colorOf, fmtClock: fmtClock,
+    N: N, DEMO: DEMO, REMOTE: REMOTE, VIEWER: VIEWER, el: el, num: num, colorOf: colorOf, fmtClock: fmtClock,
     dialog: dialog, closeDialog: closeDialog, confirmDialog: confirmDialog,
     command: command,
     cards: function () { return cards; },
@@ -999,5 +1101,6 @@
   setInterval(updateDim, 5000);
   if (DEMO) demoStart();
   else if (N) N.ready();
+  else if (VIEWER) viewerStart();
   if (!cfg.printers.length && N) openSettings();
 })();

@@ -68,9 +68,15 @@
       <h3>Printer light</h3>
       <label class="check"><input type="checkbox" id="optLightAuto"> Switch the chamber light on when a print starts; when it is done, flash it 5 times and switch it off</label>
 
-      <h3>Filament library on your computer</h3>
-      <label class="check"><input type="checkbox" id="optWebLibrary"> Let computers on my home network view and edit the filament library</label>
+      <h3>Sharing with phones and computers</h3>
+      <label class="check"><input type="checkbox" id="optWebDashboard"> Share the dashboard (cameras, progress, AMS) with phones and computers</label>
+      <label class="range">PIN for printer controls from other devices
+        <input type="password" id="optWebPin" inputmode="numeric" autocomplete="off" placeholder="empty = view only" class="pininput">
+      </label>
+      <label class="check"><input type="checkbox" id="optWebLibrary"> Let computers and phones view and edit the filament library</label>
       <p class="hint" id="webAddress"></p>
+      <p class="hint small">Works on your home Wi-Fi. To watch when you are away, install the free Tailscale app on
+        this tablet and on your phone and log in on both; then use the address that starts with 100.</p>
 
       <h3>Updates</h3>
       <p class="hint" id="updateMsg"></p>

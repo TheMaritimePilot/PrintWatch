@@ -21,6 +21,12 @@ network**. There is no server, no Home Assistant, no kiosk browser and no Bambu 
 - Errors and HMS warnings, and the reason for a pause (e.g. filament runout)
 - **Controls**: chamber light, pause / resume, stop (with confirmation), speed mode
   (Silent / Standard / Sport / Ludicrous), set nozzle and bed temperature, set fan speeds
+- **Watch from your phone or computer**: switch on "Share the dashboard" in settings and open the
+  address it shows (`http://<tablet address>:8080`). You get the same dashboard with live cameras;
+  the tablet passes the pictures on, so any number of devices can watch at once. View-only unless
+  you set a PIN; then the light, pause, stop, speed and temperature buttons work too (5 wrong PINs
+  lock it for 5 minutes). Away from home: install [Tailscale](https://tailscale.com) on the tablet
+  and the phone and use the 100.x address. Only home-network and Tailscale addresses are accepted.
 - **Print from the SD card**: every job you send from Bambu Studio / OrcaSlicer is stored on the
   printer. The **Files** button lists those files; pick one, choose the plate, check which AMS slot
   or external spool feeds each colour (suggested automatically, with a warning when a spool may
